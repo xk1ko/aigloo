@@ -104,7 +104,7 @@ git clone https://github.com/xk1ko/aigloo.git
 cd aigloo && npm install
 cp config.example.yaml config.yaml   # add providers + a server key
 npm install --prefix dashboard
-./run.sh                              # Ctrl-C stops both
+./run.sh                              # Ctrl-C to stop
 ```
 
 ### Connect your tools

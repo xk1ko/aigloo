@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Missing security headers, body-size limit** — added after 1-port
   migration review
 - **Notifications page** — missing "Back to Settings" button
+- **Stale dead code published to npm** — `dist/server.js` + `dist/routes/*`
+  (pre-1-port Fastify build output) lingered in `dist/` and got packed since
+  `tsc` doesn't clean removed sources. `npm run build` now clears `dist/`
+  first
+- **README** — stale "Ctrl-C stops both" comment from the 2-port era
 
 ### Removed
 - **`Rail.tsx`** — dead code, superseded rail implementation, unused
