@@ -7,7 +7,7 @@
  * File: <dataDir>/auth.json — { algo, salt, hash } (all hex). Absent → seeded.
  */
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -64,16 +64,25 @@ export class AuthStore {
   }
 
   /** Cheap read of the current password version without booting a full
-   *  AuthStore/gateway instance — safe to call from middleware on every
-   *  request. Returns "" if no auth.json exists yet (admin disabled). */
+   *  AuthStore/gateway instance — safe to call from proxy on every request.
+   *  Cached by mtime so the hot path (every nav/prefetch) skips the
+   *  readFileSync+JSON.parse unless auth.json actually changed on disk.
+   *  Returns "" if no auth.json exists yet (admin disabled). */
   static currentVersion(dataDir: string): string {
+    const file = join(dataDir, "auth.json");
     try {
-      const rec = JSON.parse(readFileSync(join(dataDir, "auth.json"), "utf8")) as AuthRecord;
-      return rec.version ?? "";
+      const mtimeMs = statSync(file).mtimeMs;
+      const cached = AuthStore.versionCache.get(file);
+      if (cached && cached.mtimeMs === mtimeMs) return cached.version;
+      const rec = JSON.parse(readFileSync(file, "utf8")) as AuthRecord;
+      const version = rec.version ?? "";
+      AuthStore.versionCache.set(file, { mtimeMs, version });
+      return version;
     } catch {
       return "";
     }
   }
+  private static versionCache = new Map<string, { mtimeMs: number; version: string }>();
 
   /** In-memory store seeded from a password — for tests (file under tmpdir). */
   static memory(seed: string): AuthStore {
