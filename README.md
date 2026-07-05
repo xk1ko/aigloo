@@ -69,6 +69,7 @@ First run bootstraps everything. Subsequent runs start instantly.
 - **Budgets** — rolling spend caps (global/provider/model/key) with live countdown and per-token-type cost tracking
 - **Alert notifications** — webhook, Telegram, or Discord alerts when budgets hit their threshold or run out. Deduped per budget window
 - **Dashboard** — glassmorphic aigloo design: providers, combos, usage, budgets, CLI tools, live console, settings — all drag-to-reorder
+- **Deploy anywhere** — npm global install, from source, or Docker (Docker Hub + GHCR, multi-platform)
 
 <p align="center">
   <img src="./assets/screenshot-endpoint.png" width="860" alt="Endpoint page">
