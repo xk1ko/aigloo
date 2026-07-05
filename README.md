@@ -10,6 +10,8 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/aigloo"><img src="https://img.shields.io/npm/v/aigloo.svg" alt="npm"></a>
   <a href="https://www.npmjs.com/package/aigloo"><img src="https://img.shields.io/npm/dm/aigloo.svg" alt="npm downloads"></a>
+  <a href="https://hub.docker.com/r/xk1ko/aigloo"><img src="https://img.shields.io/docker/pulls/xk1ko/aigloo.svg?logo=docker&label=Docker%20pulls" alt="Docker Pulls"></a>
+  <a href="https://github.com/xk1ko/aigloo/pkgs/container/aigloo"><img src="https://img.shields.io/badge/GHCR-xk1ko%2Faigloo-blue?logo=github" alt="GHCR"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg" alt="Node ≥22">
 </p>
@@ -110,12 +112,10 @@ npm install --prefix dashboard
 ### Docker
 
 ```bash
-git clone https://github.com/xk1ko/aigloo.git
-cd aigloo
-docker compose up
+docker run -d -p 18080:18080 -v "$HOME/.aigloo:/data" --name aigloo xk1ko/aigloo:latest
 ```
 
-Serves the same `http://localhost:18080` — dashboard, API, and admin. Config and usage data persist in a named volume (`aigloo-data`); set `AIGLOO_ADMIN_PASSWORD`/`SESSION_SECRET` in the environment or a `.env` file to keep them stable across recreates.
+Serves the same `http://localhost:18080` — dashboard, API, and admin. See [DOCKER.md](./DOCKER.md) for `docker compose`, env vars, and update instructions.
 
 ### Connect your tools
 
