@@ -1,7 +1,7 @@
 services:
   aigloo:
-    build: .
-    image: aigloo
+    image: xk1ko/aigloo:latest
+    container_name: aigloo
     ports:
       - "18080:18080"
     environment:
@@ -15,5 +15,9 @@ services:
       - aigloo-data:/data
     restart: unless-stopped
 
+# Building locally instead of pulling the published image:
+#   docker build -t aigloo . && docker run --rm -p 18080:18080 -v aigloo-data:/data aigloo
+
 volumes:
   aigloo-data:
+    name: aigloo-data
