@@ -305,8 +305,8 @@ export interface UsageSeriesPoint {
   cost: number;
 }
 export interface SavingsSummary {
-  rtk: { bytes_in: number; bytes_out: number; hits: number };
-  headroom: { tokens_before: number; tokens_after: number; hits: number };
+  rtk: { bytes_in: number; bytes_out: number; hits: number; cost_saved: number };
+  headroom: { tokens_before: number; tokens_after: number; hits: number; cost_saved: number };
   by_caveman_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
   by_ponytail_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
 }

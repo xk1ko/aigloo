@@ -169,6 +169,14 @@ function recordUsage(
   const priceCached = pricing?.cached ?? priceIn;
   const priceCacheCreation = pricing?.cache_creation ?? priceIn;
   const priceReasoning = pricing?.reasoning ?? priceOut;
+  // Both savers cut input tokens, so cost saved is priced at this request's
+  // resolved input rate. RTK only measures bytes, not tokens — ~4 chars/token
+  // is the standard English-text estimate (same ballpark OpenAI's own docs
+  // use), so this is an honest estimate, not an exact figure like Headroom's
+  // (which already measures real before/after token counts).
+  const BYTES_PER_TOKEN_ESTIMATE = 4;
+  const rtkCostSaved = Math.max(0, savers.rtkBytesIn - savers.rtkBytesOut) / BYTES_PER_TOKEN_ESTIMATE * (priceIn / 1_000_000);
+  const headroomCostSaved = Math.max(0, savers.headroomTokensBefore - savers.headroomTokensAfter) * (priceIn / 1_000_000);
   deps.db.record({
     alias: route.alias,
     provider: route.provider.id,
@@ -192,6 +200,8 @@ function recordUsage(
     headroom_tokens_after: savers.headroomTokensAfter,
     caveman_level: savers.cavemanLevel,
     ponytail_level: savers.ponytailLevel,
+    rtk_cost_saved: rtkCostSaved,
+    headroom_cost_saved: headroomCostSaved,
   });
 }
 
