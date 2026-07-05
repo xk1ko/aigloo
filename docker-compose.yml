@@ -6,7 +6,11 @@ services:
       - "18080:18080"
     environment:
       AIGLOO_ADMIN_PASSWORD: ${AIGLOO_ADMIN_PASSWORD:-123456}
-      SESSION_SECRET: ${SESSION_SECRET:-aigloo-docker-session-secret}
+      # Leave unset to let cli.ts generate+persist a random secret into the
+      # /data volume on first boot (same as non-Docker installs) — do not
+      # hardcode a literal fallback here, it'd be shared across every
+      # deployment that doesn't override it.
+      SESSION_SECRET: ${SESSION_SECRET:-}
     volumes:
       - aigloo-data:/data
     restart: unless-stopped

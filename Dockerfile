@@ -19,8 +19,11 @@ RUN npm run build --prefix dashboard
 
 # Next's standalone output ships its own traced node_modules; cli.ts expects it
 # renamed to vendor/ (NODE_PATH) and .next/static copied alongside server.js —
-# the exact fixup prepublishOnly already does for npm publishes.
-RUN node -e "const{renameSync,existsSync,cpSync}=require('fs');const p='dashboard/.next/standalone/node_modules';if(existsSync(p))renameSync(p,'dashboard/.next/standalone/vendor');cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})"
+# same fixup prepublishOnly does for npm publishes. Using cpSync+rmSync instead
+# of renameSync here (unlike prepublishOnly, which runs on a normal host FS):
+# BuildKit's layered/overlay filesystem can put the source and dest on
+# different devices, and a plain rename fails with EXDEV in that case.
+RUN node -e "const{cpSync,rmSync,existsSync}=require('fs');const p='dashboard/.next/standalone/node_modules';if(existsSync(p)){cpSync(p,'dashboard/.next/standalone/vendor',{recursive:true});rmSync(p,{recursive:true,force:true});}cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})"
 
 FROM node:22-alpine
 WORKDIR /app
