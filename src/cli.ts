@@ -399,7 +399,8 @@ function hideToTray(): void {
   });
   bg.unref();
   console.log(`  aigloo now running in the background (pid ${bg.pid}).`);
-  console.log("  right-click the tray icon → Open Dashboard / Quit. You can close this terminal.\n");
+  console.log(`  dashboard: http://localhost:${GATEWAY_PORT}`);
+  console.log("  right-click the tray icon → Open Dashboard / Quit, or open the URL above. You can close this terminal.\n");
 }
 
 async function main(): Promise<void> {

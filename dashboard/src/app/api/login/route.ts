@@ -3,6 +3,17 @@ import { cookies } from "next/headers";
 import { sealSession, SESSION_COOKIE } from "@/lib/session";
 import { gw } from "@/lib/gw";
 
+const DEFAULT_PASSWORD = "123456";
+
+/** Whether the admin password is still the seeded default — lets the login
+ *  page hint at it for a first run, without ever sending the password itself
+ *  to the browser. Already public knowledge (documented as the default in
+ *  the README), so this isn't exposing a new secret. */
+export async function GET(): Promise<NextResponse> {
+  const g = gw();
+  return NextResponse.json({ isDefault: g.auth.verify(DEFAULT_PASSWORD) });
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
   const { password } = (await req.json().catch(() => ({}))) as { password?: string };
   if (!password) {

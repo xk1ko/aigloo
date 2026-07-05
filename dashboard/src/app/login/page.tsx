@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Field } from "@/components/Button";
 
@@ -9,6 +9,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [isDefault, setIsDefault] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/login")
+      .then((r) => r.json())
+      .then((d: { isDefault?: boolean }) => setIsDefault(!!d.isDefault))
+      .catch(() => {});
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,6 +75,12 @@ export default function LoginPage() {
           <Field label="Password">
             <Input type="password" value={password} autoFocus onChange={(e) => setPassword(e.target.value)} />
           </Field>
+
+          {isDefault && (
+            <div className="mt-2.5 text-[12px] text-text-subtle">
+              Default password is <code className="text-text">123456</code> — change it in Settings after logging in.
+            </div>
+          )}
 
           {error && <div className="mt-2.5 text-[12px] text-danger">{error}</div>}
 
