@@ -42,11 +42,20 @@ COPY --from=builder /app/dashboard/.next/standalone ./dashboard/.next/standalone
 COPY --from=builder /app/dashboard/.next/static ./dashboard/.next/static
 COPY net-preload.cjs ./net-preload.cjs
 COPY config.example.yaml ./config.example.yaml
+COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 ENV AIGLOO_DATA_DIR=/data
 VOLUME /data
 EXPOSE 18080
 
+# su-exec drops from root to the built-in `node` user after the entrypoint
+# chowns the (possibly root-owned, freshly-mounted) volume — same pattern as
+# 9router's Dockerfile. node:22-alpine already has a `node` user (uid 1000).
+RUN apk add --no-cache su-exec && \
+  mkdir -p /data && chown -R node:node /app /data && \
+  chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
 # -y: skip the interactive terminal menu (no TTY in a container)
 # -n: don't try to open a host browser
 CMD ["node", "dist/cli.js", "-y", "-n"]
