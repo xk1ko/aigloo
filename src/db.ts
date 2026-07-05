@@ -36,11 +36,13 @@ export interface UsageRow {
   headroom_tokens_after: number;
   caveman_level: string;
   ponytail_level: string;
+  rtk_cost_saved: number;
+  headroom_cost_saved: number;
 }
 
 export interface SavingsSummary {
-  rtk: { bytes_in: number; bytes_out: number; hits: number };
-  headroom: { tokens_before: number; tokens_after: number; hits: number };
+  rtk: { bytes_in: number; bytes_out: number; hits: number; cost_saved: number };
+  headroom: { tokens_before: number; tokens_after: number; hits: number; cost_saved: number };
   by_caveman_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
   by_ponytail_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
 }
@@ -120,7 +122,9 @@ export class UsageDB {
         headroom_tokens_before INTEGER NOT NULL DEFAULT 0,
         headroom_tokens_after INTEGER NOT NULL DEFAULT 0,
         caveman_level TEXT NOT NULL DEFAULT 'off',
-        ponytail_level TEXT NOT NULL DEFAULT 'off'
+        ponytail_level TEXT NOT NULL DEFAULT 'off',
+        rtk_cost_saved REAL NOT NULL DEFAULT 0,
+        headroom_cost_saved REAL NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(ts);
       CREATE TABLE IF NOT EXISTS logs (
@@ -203,14 +207,20 @@ export class UsageDB {
     if (!cols.some((c) => String(c.name) === "ponytail_level")) {
       this.db.exec(`ALTER TABLE usage ADD COLUMN ponytail_level TEXT NOT NULL DEFAULT 'off'`);
     }
+    if (!cols.some((c) => String(c.name) === "rtk_cost_saved")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN rtk_cost_saved REAL NOT NULL DEFAULT 0`);
+    }
+    if (!cols.some((c) => String(c.name) === "headroom_cost_saved")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN headroom_cost_saved REAL NOT NULL DEFAULT 0`);
+    }
     const alertCols = this.db.prepare(`PRAGMA table_info(alert_log)`).all() as SqlRow[];
     if (!alertCols.some((c) => String(c.name) === "channel")) {
       this.db.exec(`ALTER TABLE alert_log ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
     }
     this.now = now;
     this.insertUsage = this.db.prepare(`
-      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out, headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out, headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level, rtk_cost_saved, headroom_cost_saved)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.insertLog = this.db.prepare(`
       INSERT INTO logs (ts, direction, provider, status, request_summary, response_summary)
@@ -261,6 +271,8 @@ export class UsageDB {
       | "headroom_tokens_after"
       | "caveman_level"
       | "ponytail_level"
+      | "rtk_cost_saved"
+      | "headroom_cost_saved"
     > & {
       ts?: number;
       client_key?: string;
@@ -272,6 +284,8 @@ export class UsageDB {
       headroom_tokens_after?: number;
       caveman_level?: string;
       ponytail_level?: string;
+      rtk_cost_saved?: number;
+      headroom_cost_saved?: number;
     },
   ): void {
     this.insertUsage.run(
@@ -295,6 +309,8 @@ export class UsageDB {
       row.headroom_tokens_after ?? 0,
       row.caveman_level ?? "off",
       row.ponytail_level ?? "off",
+      row.rtk_cost_saved ?? 0,
+      row.headroom_cost_saved ?? 0,
     );
   }
 
@@ -429,7 +445,8 @@ export class UsageDB {
       .prepare(
         `SELECT ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens,
                  cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out,
-                 headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level
+                 headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level,
+                 rtk_cost_saved, headroom_cost_saved
          FROM usage ORDER BY id DESC LIMIT ?`,
       )
       .all(Math.max(1, Math.min(limit, 1000))) as SqlRow[];
@@ -454,6 +471,8 @@ export class UsageDB {
       headroom_tokens_after: num(r.headroom_tokens_after),
       caveman_level: String(r.caveman_level ?? "off"),
       ponytail_level: String(r.ponytail_level ?? "off"),
+      rtk_cost_saved: num(r.rtk_cost_saved),
+      headroom_cost_saved: num(r.headroom_cost_saved),
     }));
   }
 
@@ -462,12 +481,16 @@ export class UsageDB {
    * before/after measurement) plus an avg-tokens_out-by-level breakdown for
    * caveman/ponytail (which bias model *output*, so there's no direct
    * counterfactual — the level breakdown is an honest trend, not a fabricated
-   * savings figure).
+   * savings figure). cost_saved is computed per-request at record time (see
+   * recordUsage in core/handler.ts) using that request's actual input price,
+   * so it's an aggregate SUM here rather than reconstructed from bytes/tokens
+   * — the latter would need a single price across possibly many models.
    */
   savingsSummary(sinceMs = 0): SavingsSummary {
     const rtk = this.db
       .prepare(
         `SELECT COALESCE(SUM(rtk_bytes_in),0) bytes_in, COALESCE(SUM(rtk_bytes_out),0) bytes_out,
+                COALESCE(SUM(rtk_cost_saved),0) cost_saved,
                 COUNT(*) FILTER (WHERE rtk_bytes_in > 0) hits
          FROM usage WHERE ts >= ?`,
       )
@@ -477,6 +500,7 @@ export class UsageDB {
       .prepare(
         `SELECT COALESCE(SUM(headroom_tokens_before),0) tokens_before,
                 COALESCE(SUM(headroom_tokens_after),0) tokens_after,
+                COALESCE(SUM(headroom_cost_saved),0) cost_saved,
                 COUNT(*) FILTER (WHERE headroom_tokens_before > 0) hits
          FROM usage WHERE ts >= ?`,
       )
@@ -493,8 +517,8 @@ export class UsageDB {
       ).map((r) => ({ level: String(r.level), requests: num(r.requests), avg_tokens_out: num(r.avg_tokens_out) }));
 
     return {
-      rtk: { bytes_in: num(rtk.bytes_in), bytes_out: num(rtk.bytes_out), hits: num(rtk.hits) },
-      headroom: { tokens_before: num(headroom.tokens_before), tokens_after: num(headroom.tokens_after), hits: num(headroom.hits) },
+      rtk: { bytes_in: num(rtk.bytes_in), bytes_out: num(rtk.bytes_out), hits: num(rtk.hits), cost_saved: num(rtk.cost_saved) },
+      headroom: { tokens_before: num(headroom.tokens_before), tokens_after: num(headroom.tokens_after), hits: num(headroom.hits), cost_saved: num(headroom.cost_saved) },
       by_caveman_level: byLevel("caveman_level"),
       by_ponytail_level: byLevel("ponytail_level"),
     };

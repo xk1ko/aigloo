@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { adminApi } from "@/lib/client";
 import { Button, Input } from "@/components/Button";
 import { Icon } from "@/components/Icon";
-import { Empty, LoadingDots } from "@/components/ui";
+import { Empty, LoadingDots, fmt } from "@/components/ui";
 import type { EndpointPayload, HeadroomStatusReply, InjectLevel, SavingsSummary } from "@/lib/gateway";
 
 const LEVELS: InjectLevel[] = ["off", "lite", "full", "ultra"];
@@ -108,7 +108,7 @@ export function EndpointView() {
               </p>
               {savings && savings.rtk.hits > 0 && (
                 <p className="mt-1 text-[11px] font-medium text-accent">
-                  ↓ {Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)}% · {(savings.rtk.bytes_in - savings.rtk.bytes_out).toLocaleString()} bytes saved this week
+                  ↓ {Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)}% · {(savings.rtk.bytes_in - savings.rtk.bytes_out).toLocaleString()} bytes saved this week · ~{fmt.cost(savings.rtk.cost_saved)}
                 </p>
               )}
             </div>
@@ -278,7 +278,7 @@ function HeadroomCard({
             />
             {savings && savings.headroom.hits > 0 && (
               <p className="text-[11px] font-medium text-accent">
-                ↓ {Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)}% · {(savings.headroom.tokens_before - savings.headroom.tokens_after).toLocaleString()} tokens saved this week
+                ↓ {Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)}% · {(savings.headroom.tokens_before - savings.headroom.tokens_after).toLocaleString()} tokens saved this week · {fmt.cost(savings.headroom.cost_saved)}
               </p>
             )}
             <div className="h-px bg-border-subtle" />

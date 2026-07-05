@@ -166,6 +166,7 @@ function SavingsPanel({ savings, loading }: { savings: SavingsSummary | null; lo
           {savings && savings.rtk.hits > 0 ? (
             <div className="mt-1 text-[13px] text-text">
               ↓ {rtkPct}% · {fmt.compact(savings.rtk.bytes_in - savings.rtk.bytes_out)} bytes saved across {fmt.int(savings.rtk.hits)} request(s)
+              <span className="text-accent"> · ~{fmt.cost(savings.rtk.cost_saved)} saved</span>
             </div>
           ) : (
             <div className="mt-1 text-[13px] text-text-subtle">No compressible tool output in this window.</div>
@@ -174,6 +175,7 @@ function SavingsPanel({ savings, loading }: { savings: SavingsSummary | null; lo
           {savings && savings.headroom.hits > 0 ? (
             <div className="mt-1 text-[13px] text-text">
               ↓ {headroomPct}% · {fmt.compact(savings.headroom.tokens_before - savings.headroom.tokens_after)} tokens saved across {fmt.int(savings.headroom.hits)} request(s)
+              <span className="text-accent"> · {fmt.cost(savings.headroom.cost_saved)} saved</span>
             </div>
           ) : (
             <div className="mt-1 text-[13px] text-text-subtle">Not enabled, or no requests in this window.</div>
