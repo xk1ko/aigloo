@@ -1,5 +1,3 @@
-> **⚠️ You are on the `dev` branch.** This branch tracks work in progress and may contain unfinished or broken features at any given commit. For a stable install, use the [`main` branch](https://github.com/xk1ko/aigloo/tree/main) or `npm install -g aigloo` — both point at the latest released version.
-
 <p align="center">
   <img src="./assets/wordmark.svg" width="420" alt="aigloo">
 </p>
