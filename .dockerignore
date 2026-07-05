@@ -1,0 +1,16 @@
+node_modules
+dashboard/node_modules
+dist
+.next
+dashboard/.next
+data
+config.yaml
+config.yaml.bak
+config.yaml.tmp
+*.sqlite
+*.sqlite-journal
+.env
+.env.local
+dashboard/.env.local
+*.log
+.git

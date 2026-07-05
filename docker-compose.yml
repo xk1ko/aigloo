@@ -1,0 +1,15 @@
+services:
+  aigloo:
+    build: .
+    image: aigloo
+    ports:
+      - "18080:18080"
+    environment:
+      AIGLOO_ADMIN_PASSWORD: ${AIGLOO_ADMIN_PASSWORD:-123456}
+      SESSION_SECRET: ${SESSION_SECRET:-aigloo-docker-session-secret}
+    volumes:
+      - aigloo-data:/data
+    restart: unless-stopped
+
+volumes:
+  aigloo-data:

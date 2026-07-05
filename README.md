@@ -107,6 +107,16 @@ npm install --prefix dashboard
 ./run.sh                              # Ctrl-C to stop
 ```
 
+### Docker
+
+```bash
+git clone https://github.com/xk1ko/aigloo.git
+cd aigloo
+docker compose up
+```
+
+Serves the same `http://localhost:18080` — dashboard, API, and admin. Config and usage data persist in a named volume (`aigloo-data`); set `AIGLOO_ADMIN_PASSWORD`/`SESSION_SECRET` in the environment or a `.env` file to keep them stable across recreates.
+
 ### Connect your tools
 
 ```bash
