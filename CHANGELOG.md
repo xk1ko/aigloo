@@ -5,6 +5,18 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] — 2026-07-06
+
+### Added
+- **Docker deployment** — official image on Docker Hub (`xk1ko/aigloo`) and GHCR, multi-platform (amd64+arm64), auto-published by CI on `v*` tags. Runs as an unprivileged `node` user; `docker-compose.yml` and `DOCKER.md` included
+- **Token saver savings tracking** — RTK/Headroom byte and token savings persisted per request, surfaced on the Endpoint page (inline per-toggle) and a new Usage page panel, including a `$` cost estimate at that request's resolved input price
+- **Default-password login hint** — login page shows "Default password is 123456" until it's changed, checked server-side without exposing the real password to the browser
+- **Tray-mode dashboard URL** — "Hide to Tray" now also prints the dashboard URL in the foreground terminal, since the background tray process's own stdout is discarded
+
+### Fixed
+- **Auth version check re-parsed `auth.json` on every request** — `proxy.ts` runs on every nav/prefetch; now cached by file mtime so the hot path skips the parse unless the file actually changed
+- **Usage page blocked on the full usage query with no loading state** — added a `loading.tsx` skeleton
+
 ## [1.1.3] — 2026-07-03
 
 ### Added
