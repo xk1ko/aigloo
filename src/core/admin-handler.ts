@@ -262,6 +262,12 @@ export async function handleAdmin(
     return { status: 200, body: { series: deps.db.series(sinceMs, bucketMs) } };
   }
 
+  if (m === "GET" && s.length === 2 && s[0] === "savings" && s[1] === "summary") {
+    if (!deps.db) return { status: 503, body: { error: "usage tracking disabled" } };
+    const since = search.has("since") ? Number(search.get("since")) : 0;
+    return { status: 200, body: deps.db.savingsSummary(Number.isFinite(since) ? since : 0) };
+  }
+
   if (m === "GET" && s.length === 1 && s[0] === "logs") {
     if (!deps.db) return { status: 503, body: { error: "usage tracking disabled" } };
     const limit = search.has("limit") ? Number(search.get("limit")) : 100;

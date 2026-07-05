@@ -5,7 +5,7 @@ import { adminApi } from "@/lib/client";
 import { Button, Input } from "@/components/Button";
 import { Icon } from "@/components/Icon";
 import { Empty, LoadingDots } from "@/components/ui";
-import type { EndpointPayload, HeadroomStatusReply, InjectLevel } from "@/lib/gateway";
+import type { EndpointPayload, HeadroomStatusReply, InjectLevel, SavingsSummary } from "@/lib/gateway";
 
 const LEVELS: InjectLevel[] = ["off", "lite", "full", "ultra"];
 
@@ -14,6 +14,7 @@ export function EndpointView() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [hr, setHr] = useState<HeadroomStatusReply | null>(null);
+  const [savings, setSavings] = useState<SavingsSummary | null>(null);
 
   const reload = useCallback(async () => {
     const r = await adminApi.endpoint();
@@ -30,10 +31,17 @@ export function EndpointView() {
     if (r.ok) setHr(r.data);
   }, []);
 
+  const reloadSavings = useCallback(async () => {
+    // trailing 7 days — enough to be a meaningful trend without a picker on this page.
+    const r = await adminApi.savingsSummary(Date.now() - 7 * 86400_000);
+    if (r.ok) setSavings(r.data);
+  }, []);
+
   useEffect(() => {
     void reload();
     void reloadHr();
-  }, [reload, reloadHr]);
+    void reloadSavings();
+  }, [reload, reloadHr, reloadSavings]);
 
   async function run(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(label);
@@ -98,6 +106,11 @@ export function EndpointView() {
               <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
                 Compress bulky tool_result blocks (diffs, grep, listings) in the request.
               </p>
+              {savings && savings.rtk.hits > 0 && (
+                <p className="mt-1 text-[11px] font-medium text-accent">
+                  ↓ {Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)}% · {(savings.rtk.bytes_in - savings.rtk.bytes_out).toLocaleString()} bytes saved this week
+                </p>
+              )}
             </div>
 
             {/* Caveman */}
@@ -109,6 +122,14 @@ export function EndpointView() {
               <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
                 Terse model output — drops filler, keeps substance.
               </p>
+              {(() => {
+                const row = savings?.by_caveman_level.find((r) => r.level === ep.caveman && r.level !== "off");
+                return row && row.requests > 0 ? (
+                  <p className="mt-1 text-[11px] font-medium text-accent">
+                    avg {Math.round(row.avg_tokens_out).toLocaleString()} output tokens/request at "{row.level}" this week
+                  </p>
+                ) : null;
+              })()}
               <div className="mt-2 flex items-center gap-0.5 rounded-full bg-surface-2 p-0.5">
                 {LEVELS.map((lvl) => (
                   <button
@@ -134,6 +155,14 @@ export function EndpointView() {
               <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
                 Minimal, YAGNI code style — deletion over addition.
               </p>
+              {(() => {
+                const row = savings?.by_ponytail_level.find((r) => r.level === ep.ponytail && r.level !== "off");
+                return row && row.requests > 0 ? (
+                  <p className="mt-1 text-[11px] font-medium text-accent">
+                    avg {Math.round(row.avg_tokens_out).toLocaleString()} output tokens/request at "{row.level}" this week
+                  </p>
+                ) : null;
+              })()}
               <div className="mt-2 flex items-center gap-0.5 rounded-full bg-surface-2 p-0.5">
                 {LEVELS.map((lvl) => (
                   <button
@@ -156,6 +185,7 @@ export function EndpointView() {
         <HeadroomCard
           ep={ep}
           hr={hr}
+          savings={savings}
           refresh={async () => {
             await reload();
             await reloadHr();
@@ -169,10 +199,12 @@ export function EndpointView() {
 function HeadroomCard({
   ep,
   hr,
+  savings,
   refresh,
 }: {
   ep: EndpointPayload;
   hr: HeadroomStatusReply | null;
+  savings: SavingsSummary | null;
   refresh: () => Promise<void>;
 }) {
   const h = ep.headroom;
@@ -244,6 +276,11 @@ function HeadroomCard({
               disabled={!hr?.running && !h.enabled}
               onChange={(v) => act("enable", () => adminApi.setHeadroom({ enabled: v }))}
             />
+            {savings && savings.headroom.hits > 0 && (
+              <p className="text-[11px] font-medium text-accent">
+                ↓ {Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)}% · {(savings.headroom.tokens_before - savings.headroom.tokens_after).toLocaleString()} tokens saved this week
+              </p>
+            )}
             <div className="h-px bg-border-subtle" />
             <ToggleRow
               label="Compress user msgs"

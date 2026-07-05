@@ -20,6 +20,7 @@ import type {
   BatchTestResponse,
   PricingPayload,
   ProviderSnapshot,
+  SavingsSummary,
   WireFormat,
 } from "./gateway";
 import type { CapsTables } from "./capabilities";
@@ -63,6 +64,7 @@ export const adminApi = {
   capabilities: () => api<CapsTables>("GET", "/admin/capabilities"),
   keys: () => api<Array<{ fingerprint: string; name: string; masked: string }>>("GET", "/admin/keys"),
   keysUsage: () => api<{ keys: KeyUsageRow[] }>("GET", "/admin/keys/usage"),
+  savingsSummary: (since = 0) => api<SavingsSummary>("GET", `/admin/savings/summary?since=${since}`),
 
   setBudget: (body: {
     scope: { type: "global" } | { type: "provider"; id: string } | { type: "model"; id: string } | { type: "key"; id: string };

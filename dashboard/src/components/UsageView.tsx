@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { AreaChart, type SeriesPoint } from "@/components/AreaChart";
 import { Icon } from "@/components/Icon";
 import { fmt, Empty } from "@/components/ui";
-import type { UsageSummary } from "@/lib/gateway";
+import type { UsageSummary, SavingsSummary } from "@/lib/gateway";
 
 const PAGE_SIZE = 8;
 
@@ -37,6 +37,7 @@ export function UsageView() {
   const [win, setWin] = useState<Window>(WINDOWS[0]!);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [savings, setSavings] = useState<SavingsSummary | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -44,9 +45,10 @@ export function UsageView() {
     setLoading(true);
     setError("");
     const since = sinceFor(w.key);
-    const [sumRes, serRes] = await Promise.all([
+    const [sumRes, serRes, savRes] = await Promise.all([
       fetch(`/api/gw/admin/usage?since=${since}`),
       fetch(`/api/gw/admin/usage/series?since=${since}&bucket=${w.bucketMs}`),
+      fetch(`/api/gw/admin/savings/summary?since=${since}`),
     ]);
     if (!sumRes.ok) {
       setError("could not load usage");
@@ -56,6 +58,7 @@ export function UsageView() {
     setSummary((await sumRes.json()) as UsageSummary);
     const ser = serRes.ok ? ((await serRes.json()) as { series: SeriesPoint[] }) : { series: [] };
     setSeries(ser.series);
+    setSavings(savRes.ok ? ((await savRes.json()) as SavingsSummary) : null);
     setLoading(false);
   }, []);
 
@@ -131,8 +134,68 @@ export function UsageView() {
               loading={loading}
             />
           </div>
+
+          <div className="mt-3">
+            <SavingsPanel savings={savings} loading={loading} />
+          </div>
         </>
       )}
+    </div>
+  );
+}
+
+function SavingsPanel({ savings, loading }: { savings: SavingsSummary | null; loading: boolean }) {
+  const rtkPct = savings && savings.rtk.bytes_in > 0
+    ? Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)
+    : 0;
+  const headroomPct = savings && savings.headroom.tokens_before > 0
+    ? Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)
+    : 0;
+  const levelRows = (rows: SavingsSummary["by_caveman_level"]) =>
+    rows.filter((r) => r.requests > 0 && r.level !== "off");
+
+  return (
+    <div className={`overflow-hidden rounded-brand-lg card ${loading ? "opacity-50" : ""}`}>
+      <div className="flex items-center gap-2 border-b border-border-subtle px-5 py-3">
+        <Icon name="savings" size={15} className="text-text-subtle" />
+        <h2 className="text-[13px] font-semibold text-text">Token Saver Savings</h2>
+      </div>
+      <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">RTK</div>
+          {savings && savings.rtk.hits > 0 ? (
+            <div className="mt-1 text-[13px] text-text">
+              ↓ {rtkPct}% · {fmt.compact(savings.rtk.bytes_in - savings.rtk.bytes_out)} bytes saved across {fmt.int(savings.rtk.hits)} request(s)
+            </div>
+          ) : (
+            <div className="mt-1 text-[13px] text-text-subtle">No compressible tool output in this window.</div>
+          )}
+          <div className="mt-4 text-[11px] font-medium uppercase tracking-wider text-text-subtle">Headroom</div>
+          {savings && savings.headroom.hits > 0 ? (
+            <div className="mt-1 text-[13px] text-text">
+              ↓ {headroomPct}% · {fmt.compact(savings.headroom.tokens_before - savings.headroom.tokens_after)} tokens saved across {fmt.int(savings.headroom.hits)} request(s)
+            </div>
+          ) : (
+            <div className="mt-1 text-[13px] text-text-subtle">Not enabled, or no requests in this window.</div>
+          )}
+        </div>
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">Avg output tokens by level</div>
+          <div className="mt-1 space-y-1 text-[13px] text-text">
+            {[...levelRows(savings?.by_caveman_level ?? []).map((r) => ({ ...r, saver: "Caveman" })),
+              ...levelRows(savings?.by_ponytail_level ?? []).map((r) => ({ ...r, saver: "Ponytail" }))]
+              .map((r) => (
+                <div key={`${r.saver}-${r.level}`} className="flex items-center justify-between">
+                  <span className="text-text-subtle">{r.saver} · {r.level}</span>
+                  <span className="tnum">{fmt.compact(r.avg_tokens_out)} avg out ({fmt.int(r.requests)} req)</span>
+                </div>
+              ))}
+            {levelRows(savings?.by_caveman_level ?? []).length === 0 && levelRows(savings?.by_ponytail_level ?? []).length === 0 && (
+              <div className="text-text-subtle">Caveman/Ponytail off for all requests in this window.</div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -41,6 +41,7 @@ export const gateway = {
   usage: (since = 0) => call<UsageSummary>("GET", `/admin/usage?since=${since}`),
   usageSeries: (since: number, bucket: number) =>
     call<{ series: UsageSeriesPoint[] }>("GET", `/admin/usage/series?since=${since}&bucket=${bucket}`),
+  savingsSummary: (since = 0) => call<SavingsSummary>("GET", `/admin/savings/summary?since=${since}`),
   config: () => call<MaskedConfig>("GET", "/admin/config"),
   putConfig: (text: string) => call<{ ok: boolean; config: MaskedConfig }>("PUT", "/admin/config", { text }),
   changePassword: (current: string, next: string) =>
@@ -302,6 +303,12 @@ export interface UsageSeriesPoint {
   tokens_in: number;
   tokens_out: number;
   cost: number;
+}
+export interface SavingsSummary {
+  rtk: { bytes_in: number; bytes_out: number; hits: number };
+  headroom: { tokens_before: number; tokens_after: number; hits: number };
+  by_caveman_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
+  by_ponytail_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
 }
 
 export interface NotificationConfig {

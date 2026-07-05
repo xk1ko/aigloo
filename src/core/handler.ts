@@ -139,6 +139,15 @@ export interface HandleDeps {
   now?: () => number;
 }
 
+interface SaverStats {
+  rtkBytesIn: number;
+  rtkBytesOut: number;
+  headroomTokensBefore: number;
+  headroomTokensAfter: number;
+  cavemanLevel: string;
+  ponytailLevel: string;
+}
+
 function recordUsage(
   deps: HandleDeps,
   route: ResolvedRoute,
@@ -146,6 +155,7 @@ function recordUsage(
   status: number,
   latencyMs: number,
   stream: boolean,
+  savers: SaverStats,
 ): void {
   const tokensIn = usage?.prompt_tokens ?? 0;
   const tokensOut = usage?.completion_tokens ?? 0;
@@ -176,6 +186,12 @@ function recordUsage(
     latency_ms: latencyMs,
     stream: stream ? 1 : 0,
     client_key: deps.clientKeyFp ?? "",
+    rtk_bytes_in: savers.rtkBytesIn,
+    rtk_bytes_out: savers.rtkBytesOut,
+    headroom_tokens_before: savers.headroomTokensBefore,
+    headroom_tokens_after: savers.headroomTokensAfter,
+    caveman_level: savers.cavemanLevel,
+    ponytail_level: savers.ponytailLevel,
   });
 }
 
@@ -249,6 +265,15 @@ export async function handle(
   // inject prepends the output-style system prompt. They touch different parts
   // of the request and stack cleanly. Both run before routing so every fallback
   // attempt sends the same transformed request.
+  const savers: SaverStats = {
+    rtkBytesIn: 0,
+    rtkBytesOut: 0,
+    headroomTokensBefore: 0,
+    headroomTokensAfter: 0,
+    cavemanLevel: config.endpoint.caveman,
+    ponytailLevel: config.endpoint.ponytail,
+  };
+
   if (config.endpoint.rtk) {
     const stats = compressMessages(canonical.messages);
     if (stats.hits > 0) {
@@ -256,6 +281,8 @@ export async function handle(
       deps.log?.(
         `[rtk] compressed ${stats.hits} tool output(s): ${stats.bytesIn}B -> ${stats.bytesOut}B (${pct}%) via [${stats.shapes.join(",")}]`,
       );
+      savers.rtkBytesIn = stats.bytesIn;
+      savers.rtkBytesOut = stats.bytesOut;
     }
   }
 
@@ -283,6 +310,8 @@ export async function handle(
       canonical.messages = hr.messages;
       const line = formatHeadroomLog(hr);
       if (line) deps.log?.(`[headroom] ${line}`);
+      savers.headroomTokensBefore = hr.tokens_before ?? 0;
+      savers.headroomTokensAfter = hr.tokens_after ?? 0;
     }
   }
 
@@ -311,7 +340,7 @@ export async function handle(
 
   if (!result.stream) {
     const clientBody = ingress.responseFromCanonical(result.response);
-    recordUsage(deps, route, result.response.usage, 200, now() - startedAt, false);
+    recordUsage(deps, route, result.response.usage, 200, now() - startedAt, false, savers);
     fireAlertCheck(deps);
     return { status: 200, json: clientBody };
   }
@@ -348,7 +377,7 @@ export async function handle(
         yield encodeSSE(ev);
       }
     } finally {
-      recordUsage(deps, route, lastUsage, 200, now() - startedAt, true);
+      recordUsage(deps, route, lastUsage, 200, now() - startedAt, true, savers);
       fireAlertCheck(deps);
     }
   }

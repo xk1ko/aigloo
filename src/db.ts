@@ -30,6 +30,19 @@ export interface UsageRow {
   latency_ms: number;
   stream: number; // 0/1
   client_key: string;
+  rtk_bytes_in: number;
+  rtk_bytes_out: number;
+  headroom_tokens_before: number;
+  headroom_tokens_after: number;
+  caveman_level: string;
+  ponytail_level: string;
+}
+
+export interface SavingsSummary {
+  rtk: { bytes_in: number; bytes_out: number; hits: number };
+  headroom: { tokens_before: number; tokens_after: number; hits: number };
+  by_caveman_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
+  by_ponytail_level: Array<{ level: string; requests: number; avg_tokens_out: number }>;
 }
 
 export interface LogRow {
@@ -101,7 +114,13 @@ export class UsageDB {
         status INTEGER NOT NULL,
         latency_ms INTEGER NOT NULL DEFAULT 0,
         stream INTEGER NOT NULL DEFAULT 0,
-        client_key TEXT NOT NULL DEFAULT ''
+        client_key TEXT NOT NULL DEFAULT '',
+        rtk_bytes_in INTEGER NOT NULL DEFAULT 0,
+        rtk_bytes_out INTEGER NOT NULL DEFAULT 0,
+        headroom_tokens_before INTEGER NOT NULL DEFAULT 0,
+        headroom_tokens_after INTEGER NOT NULL DEFAULT 0,
+        caveman_level TEXT NOT NULL DEFAULT 'off',
+        ponytail_level TEXT NOT NULL DEFAULT 'off'
       );
       CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(ts);
       CREATE TABLE IF NOT EXISTS logs (
@@ -166,14 +185,32 @@ export class UsageDB {
     if (!cols.some((c) => String(c.name) === "cache_creation_tokens")) {
       this.db.exec(`ALTER TABLE usage ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0`);
     }
+    if (!cols.some((c) => String(c.name) === "rtk_bytes_in")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN rtk_bytes_in INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.some((c) => String(c.name) === "rtk_bytes_out")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN rtk_bytes_out INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.some((c) => String(c.name) === "headroom_tokens_before")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN headroom_tokens_before INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.some((c) => String(c.name) === "headroom_tokens_after")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN headroom_tokens_after INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.some((c) => String(c.name) === "caveman_level")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN caveman_level TEXT NOT NULL DEFAULT 'off'`);
+    }
+    if (!cols.some((c) => String(c.name) === "ponytail_level")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN ponytail_level TEXT NOT NULL DEFAULT 'off'`);
+    }
     const alertCols = this.db.prepare(`PRAGMA table_info(alert_log)`).all() as SqlRow[];
     if (!alertCols.some((c) => String(c.name) === "channel")) {
       this.db.exec(`ALTER TABLE alert_log ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
     }
     this.now = now;
     this.insertUsage = this.db.prepare(`
-      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, status, latency_ms, stream, client_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out, headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.insertLog = this.db.prepare(`
       INSERT INTO logs (ts, direction, provider, status, request_summary, response_summary)
@@ -211,7 +248,32 @@ export class UsageDB {
     this.clearAlertStateStmt = this.db.prepare(`DELETE FROM alert_state WHERE scope = ?`);
   }
 
-  record(row: Omit<UsageRow, "ts" | "client_key" | "reasoning_tokens" | "cache_creation_tokens"> & { ts?: number; client_key?: string; reasoning_tokens?: number; cache_creation_tokens?: number }): void {
+  record(
+    row: Omit<
+      UsageRow,
+      | "ts"
+      | "client_key"
+      | "reasoning_tokens"
+      | "cache_creation_tokens"
+      | "rtk_bytes_in"
+      | "rtk_bytes_out"
+      | "headroom_tokens_before"
+      | "headroom_tokens_after"
+      | "caveman_level"
+      | "ponytail_level"
+    > & {
+      ts?: number;
+      client_key?: string;
+      reasoning_tokens?: number;
+      cache_creation_tokens?: number;
+      rtk_bytes_in?: number;
+      rtk_bytes_out?: number;
+      headroom_tokens_before?: number;
+      headroom_tokens_after?: number;
+      caveman_level?: string;
+      ponytail_level?: string;
+    },
+  ): void {
     this.insertUsage.run(
       row.ts ?? this.now(),
       row.alias,
@@ -227,6 +289,12 @@ export class UsageDB {
       row.latency_ms,
       row.stream,
       row.client_key ?? "",
+      row.rtk_bytes_in ?? 0,
+      row.rtk_bytes_out ?? 0,
+      row.headroom_tokens_before ?? 0,
+      row.headroom_tokens_after ?? 0,
+      row.caveman_level ?? "off",
+      row.ponytail_level ?? "off",
     );
   }
 
@@ -360,7 +428,8 @@ export class UsageDB {
     const rows = this.db
       .prepare(
         `SELECT ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens,
-                 cost, status, latency_ms, stream, client_key
+                 cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out,
+                 headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level
          FROM usage ORDER BY id DESC LIMIT ?`,
       )
       .all(Math.max(1, Math.min(limit, 1000))) as SqlRow[];
@@ -379,7 +448,56 @@ export class UsageDB {
       latency_ms: num(r.latency_ms),
       stream: num(r.stream),
       client_key: String(r.client_key ?? ""),
+      rtk_bytes_in: num(r.rtk_bytes_in),
+      rtk_bytes_out: num(r.rtk_bytes_out),
+      headroom_tokens_before: num(r.headroom_tokens_before),
+      headroom_tokens_after: num(r.headroom_tokens_after),
+      caveman_level: String(r.caveman_level ?? "off"),
+      ponytail_level: String(r.ponytail_level ?? "off"),
     }));
+  }
+
+  /**
+   * Token-saver ROI: byte-diff totals for RTK/Headroom (both have a real
+   * before/after measurement) plus an avg-tokens_out-by-level breakdown for
+   * caveman/ponytail (which bias model *output*, so there's no direct
+   * counterfactual — the level breakdown is an honest trend, not a fabricated
+   * savings figure).
+   */
+  savingsSummary(sinceMs = 0): SavingsSummary {
+    const rtk = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(rtk_bytes_in),0) bytes_in, COALESCE(SUM(rtk_bytes_out),0) bytes_out,
+                COUNT(*) FILTER (WHERE rtk_bytes_in > 0) hits
+         FROM usage WHERE ts >= ?`,
+      )
+      .get(sinceMs) as SqlRow;
+
+    const headroom = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(headroom_tokens_before),0) tokens_before,
+                COALESCE(SUM(headroom_tokens_after),0) tokens_after,
+                COUNT(*) FILTER (WHERE headroom_tokens_before > 0) hits
+         FROM usage WHERE ts >= ?`,
+      )
+      .get(sinceMs) as SqlRow;
+
+    const byLevel = (col: "caveman_level" | "ponytail_level") =>
+      (
+        this.db
+          .prepare(
+            `SELECT ${col} level, COUNT(*) requests, COALESCE(AVG(tokens_out),0) avg_tokens_out
+             FROM usage WHERE ts >= ? GROUP BY ${col} ORDER BY ${col}`,
+          )
+          .all(sinceMs) as SqlRow[]
+      ).map((r) => ({ level: String(r.level), requests: num(r.requests), avg_tokens_out: num(r.avg_tokens_out) }));
+
+    return {
+      rtk: { bytes_in: num(rtk.bytes_in), bytes_out: num(rtk.bytes_out), hits: num(rtk.hits) },
+      headroom: { tokens_before: num(headroom.tokens_before), tokens_after: num(headroom.tokens_after), hits: num(headroom.hits) },
+      by_caveman_level: byLevel("caveman_level"),
+      by_ponytail_level: byLevel("ponytail_level"),
+    };
   }
 
   close(): void {
