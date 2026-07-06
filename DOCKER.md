@@ -88,8 +88,10 @@ docker run --rm -p 18080:18080 \
 ## Publish (automatic via CI)
 
 Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/xk1ko/aigloo:v{version}` + `:latest`
-- `xk1ko/aigloo:v{version}` + `:latest`
+- `ghcr.io/xk1ko/aigloo:{version}` + `:latest`
+- `xk1ko/aigloo:{version}` + `:latest`
+
+Note the image tag drops the `v` prefix (`docker pull xk1ko/aigloo:1.1.4`, not `:v1.1.4`) — that's `docker/metadata-action`'s `type=semver` behavior, same convention 9router uses.
 
 ```bash
 git tag v1.1.4 && git push origin v1.1.4
