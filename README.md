@@ -165,7 +165,10 @@ endpoint:
   rtk: true                 # compress tool_result blocks
   caveman: full             # off | lite | full | ultra
   ponytail: lite            # off | lite | full | ultra
-  headroom: off             # off | on — requires external headroom proxy
+  headroom:
+    enabled: false          # requires external headroom proxy running
+    url: http://localhost:8787
+    compress_user_messages: false
 
 providers:
   - id: anthropic
