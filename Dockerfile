@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Multi-stage build — produces the same standalone artifacts the npm-published
 # package ships (dist/ + dashboard/.next/standalone), so the container behaves
 # identically to `npm install -g aigloo && aigloo`. See src/cli.ts spawnDashboard()
@@ -7,10 +8,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY dashboard/package.json dashboard/package-lock.json ./dashboard/
-RUN npm ci --prefix dashboard
+RUN --mount=type=cache,target=/root/.npm npm ci --prefix dashboard
 
 COPY . .
 
@@ -32,7 +33,7 @@ ENV NODE_ENV=production
 # root deps for dist/cli.js (undici, yaml, zod) — the standalone dashboard build
 # carries its own vendored deps separately, this is just the launcher's.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 # cli.ts hard-requires dashboard/package.json to exist before it will start,
