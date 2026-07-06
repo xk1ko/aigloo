@@ -25,7 +25,7 @@
     "url": "https://github.com/xk1ko/aigloo/issues"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5"
   },
   "bin": {
     "aigloo": "dist/cli.js"

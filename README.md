@@ -13,7 +13,7 @@
   <a href="https://hub.docker.com/r/xk1ko/aigloo"><img src="https://img.shields.io/docker/pulls/xk1ko/aigloo.svg?logo=docker&label=Docker%20pulls" alt="Docker Pulls"></a>
   <a href="https://github.com/xk1ko/aigloo/pkgs/container/aigloo"><img src="https://img.shields.io/badge/GHCR-xk1ko%2Faigloo-blue?logo=github" alt="GHCR"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg" alt="Node ≥22">
+  <img src="https://img.shields.io/badge/node-%3E%3D22.5-brightgreen.svg" alt="Node ≥22.5">
 </p>
 
 <p align="center">
@@ -165,10 +165,7 @@ endpoint:
   rtk: true                 # compress tool_result blocks
   caveman: full             # off | lite | full | ultra
   ponytail: lite            # off | lite | full | ultra
-  headroom:
-    enabled: false          # requires external headroom proxy running
-    url: http://localhost:8787
-    compress_user_messages: false
+  headroom: { enabled: false }  # requires external headroom proxy running — see Token savers below
 
 providers:
   - id: anthropic

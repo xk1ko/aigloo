@@ -258,7 +258,9 @@ function spawnDashboard(): ChildProcess {
   // X-Forwarded-For. Appended (not replaced) so any NODE_OPTIONS the operator
   // already set keeps working.
   const preload = `--require ${join(root, "net-preload.cjs")}`;
-  const nodeOptions = [process.env.NODE_OPTIONS, preload].filter(Boolean).join(" ");
+  // node:sqlite needs this flag on Node 22.5–22.12 (unflagged from 22.13 on); a
+  // no-op there and on anything newer, so always safe to pass.
+  const nodeOptions = [process.env.NODE_OPTIONS, preload, "--experimental-sqlite"].filter(Boolean).join(" ");
 
   const env = {
     ...process.env,
