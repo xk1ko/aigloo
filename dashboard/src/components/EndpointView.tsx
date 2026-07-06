@@ -107,8 +107,8 @@ export function EndpointView() {
                 Compress bulky tool_result blocks (diffs, grep, listings) in the request.
               </p>
               {savings && savings.rtk.hits > 0 && (
-                <p className="mt-1 text-[11px] font-medium text-accent">
-                  ↓ {Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)}% · {(savings.rtk.bytes_in - savings.rtk.bytes_out).toLocaleString()} bytes saved this week · ~{fmt.cost(savings.rtk.cost_saved)}
+                <p className="mt-1 text-[11px] text-text-muted">
+                  <span className="font-bold text-accent">~{fmt.cost(savings.rtk.cost_saved)} saved</span> this week — {fmt.compact(savings.rtk.bytes_in - savings.rtk.bytes_out)} bytes trimmed ({Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)}%) across {savings.rtk.hits} req{savings.rtk.hits === 1 ? "" : "s"}
                 </p>
               )}
             </div>
@@ -122,14 +122,6 @@ export function EndpointView() {
               <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
                 Terse model output — drops filler, keeps substance.
               </p>
-              {(() => {
-                const row = savings?.by_caveman_level.find((r) => r.level === ep.caveman && r.level !== "off");
-                return row && row.requests > 0 ? (
-                  <p className="mt-1 text-[11px] font-medium text-accent">
-                    avg {Math.round(row.avg_tokens_out).toLocaleString()} output tokens/request at "{row.level}" this week
-                  </p>
-                ) : null;
-              })()}
               <div className="mt-2 flex items-center gap-0.5 rounded-full bg-surface-2 p-0.5">
                 {LEVELS.map((lvl) => (
                   <button
@@ -155,14 +147,6 @@ export function EndpointView() {
               <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
                 Minimal, YAGNI code style — deletion over addition.
               </p>
-              {(() => {
-                const row = savings?.by_ponytail_level.find((r) => r.level === ep.ponytail && r.level !== "off");
-                return row && row.requests > 0 ? (
-                  <p className="mt-1 text-[11px] font-medium text-accent">
-                    avg {Math.round(row.avg_tokens_out).toLocaleString()} output tokens/request at "{row.level}" this week
-                  </p>
-                ) : null;
-              })()}
               <div className="mt-2 flex items-center gap-0.5 rounded-full bg-surface-2 p-0.5">
                 {LEVELS.map((lvl) => (
                   <button
@@ -277,8 +261,8 @@ function HeadroomCard({
               onChange={(v) => act("enable", () => adminApi.setHeadroom({ enabled: v }))}
             />
             {savings && savings.headroom.hits > 0 && (
-              <p className="text-[11px] font-medium text-accent">
-                ↓ {Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)}% · {(savings.headroom.tokens_before - savings.headroom.tokens_after).toLocaleString()} tokens saved this week · {fmt.cost(savings.headroom.cost_saved)}
+              <p className="text-[11px] text-text-muted">
+                <span className="font-bold text-accent">~{fmt.cost(savings.headroom.cost_saved)} saved</span> this week — {fmt.compact(savings.headroom.tokens_before - savings.headroom.tokens_after)} tokens trimmed ({Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)}%) across {savings.headroom.hits} req{savings.headroom.hits === 1 ? "" : "s"}
               </p>
             )}
             <div className="h-px bg-border-subtle" />

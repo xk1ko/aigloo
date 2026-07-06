@@ -64,7 +64,7 @@ First run bootstraps everything. Subsequent runs start instantly.
 
 - **Format translation** — OpenAI ↔ Anthropic on the fly, streaming included
 - **Routing & fallback** — use `provider/model` directly (key round-robin) or define combo aliases for multi-provider fallback chains; auto-rotates keys on 429/5xx/timeout
-- **Token savers** — RTK compresses tool results, caveman trims prose, ponytail nudges minimal code, headroom compresses context
+- **Token savers** — RTK compresses tool results, caveman trims prose, ponytail nudges minimal code, headroom compresses context — with per-request $ savings tracked on the Endpoint and Usage pages
 - **Access keys** — share gateway keys with model allowlist, rate limit, spend cap, and expiry
 - **Budgets** — rolling spend caps (global/provider/model/key) with live countdown and per-token-type cost tracking
 - **Alert notifications** — webhook, Telegram, or Discord alerts when budgets hit their threshold or run out. Deduped per budget window
