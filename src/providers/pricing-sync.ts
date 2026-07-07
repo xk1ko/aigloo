@@ -1,21 +1,24 @@
 /**
- * External pricing sync — fetches model pricing from models.dev (primary)
- * and LiteLLM (backup), both MIT-licensed community databases. Synced pricing
- * is provider-agnostic (keyed by model) and stored in the pricing_synced table;
- * it sits below user overrides but above hardcoded defaults in the resolution
- * chain (see pricing.ts getPricingForModel).
+ * External model-data sync — fetches pricing + capabilities from models.dev
+ * (primary) and pricing from LiteLLM (backup), both MIT-licensed community
+ * databases. One models.dev fetch yields both pricing and capabilities.
  *
- * models.dev: https://models.dev/api.json — 4000+ models, costs already $/1M tokens.
- * LiteLLM: model_prices_and_context_window.json — costs are per-token, scaled ×1e6.
- *
- * Resolution order (highest wins):
- *   1. runtimeOverrides (user dashboard — never touched by sync)
- *   2. synced models.dev
- *   3. synced LiteLLM
+ * Pricing resolution (highest wins):
+ *   1. runtimeOverrides (user dashboard/config — never touched by sync)
+ *   2. synced models.dev pricing
+ *   3. synced LiteLLM pricing
  *   4. PROVIDER_PRICING / MODEL_PRICING / PATTERN_PRICING (hardcoded)
+ *
+ * Capabilities resolution (synced sits LOWER than hardcoded, because hardcoded
+ * carries richer thinkingFormat/search data models.dev lacks):
+ *   1. PROVIDER_CAPABILITIES / MODEL_CAPABILITIES / PATTERN_CAPABILITIES
+ *   2. synced models.dev capabilities (fills models no hardcoded layer covers)
+ *   3. DEFAULT_CAPABILITIES
  */
 import type { Pricing } from "./pricing.js";
 import { setSyncedPricing } from "./pricing.js";
+import type { Caps } from "./capabilities.js";
+import { setSyncedCapabilities } from "./capabilities.js";
 
 export type PricingSource = "modelsdev" | "litellm";
 
@@ -36,9 +39,23 @@ interface ModelsDevCost {
   cache_read?: number;
   cache_write?: number;
 }
+interface ModelsDevLimit {
+  context?: number;
+  input?: number;
+  output?: number;
+}
+interface ModelsDevModalities {
+  input?: string[];
+  output?: string[];
+}
 interface ModelsDevModel {
   id: string;
   cost?: ModelsDevCost;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  attachment?: boolean;
+  modalities?: ModelsDevModalities;
+  limit?: ModelsDevLimit;
 }
 interface ModelsDevProvider {
   id: string;
@@ -131,6 +148,33 @@ export function transformModelsDev(raw: ModelsDevData): Map<string, Pricing> {
   return out;
 }
 
+/** models.dev → Partial<Caps>. Only fields models.dev can provide (no thinkingFormat/search). */
+export function transformModelsDevToCapabilities(raw: ModelsDevData): Map<string, Partial<Caps>> {
+  const out = new Map<string, Partial<Caps>>();
+  for (const provider of Object.values(raw)) {
+    for (const model of Object.values(provider.models ?? {})) {
+      const caps: Partial<Caps> = {};
+      const inMods = model.modalities?.input ?? [];
+      const outMods = model.modalities?.output ?? [];
+      if (inMods.includes("image")) caps.vision = true;
+      if (inMods.includes("pdf")) caps.pdf = true;
+      if (inMods.includes("audio")) caps.audioInput = true;
+      if (inMods.includes("video")) caps.videoInput = true;
+      if (outMods.includes("image")) caps.imageOutput = true;
+      if (outMods.includes("audio")) caps.audioOutput = true;
+      if (model.reasoning === true) caps.reasoning = true;
+      if (model.tool_call === true) caps.tools = true;
+      if (model.tool_call === false) caps.tools = false;
+      if (model.limit?.context != null) caps.contextWindow = model.limit.context;
+      if (model.limit?.output != null) caps.maxOutput = model.limit.output;
+      if (Object.keys(caps).length === 0) continue;
+      const key = model.id.toLowerCase();
+      if (!out.has(key)) out.set(key, caps);
+    }
+  }
+  return out;
+}
+
 /** LiteLLM costs are per-token — scale ×1e6 to $/1M. Strips provider prefix from key. */
 export function transformLiteLLM(raw: LiteLLMData): Map<string, Pricing> {
   const out = new Map<string, Pricing>();
@@ -164,6 +208,8 @@ interface SyncDB {
   saveSyncedPricing(source: string, rows: Array<{ model: string; pricing: Pricing }>): void;
   clearSyncedPricing(source?: string): void;
   listSyncedPricing(source?: string): Array<{ source: string; model: string; input: number; output: number; cached: number | null; cache_creation: number | null; reasoning: number | null; fetched_at: number }>;
+  saveSyncedCapabilities(rows: Array<{ model: string; caps: Record<string, unknown> }>): void;
+  listSyncedCapabilities(): Array<{ model: string; caps: Record<string, unknown>; fetched_at: number }>;
 }
 
 // ─── sync ──────────────────────────────────────────────
@@ -173,11 +219,17 @@ export async function syncModelsDev(db: SyncDB): Promise<SyncResult> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const raw = await fetchModelsDevRaw();
-      const map = transformModelsDev(raw);
-      const rows = [...map.entries()].map(([model, pricing]) => ({ model, pricing }));
-      db.saveSyncedPricing("modelsdev", rows);
-      setSyncedPricing("modelsdev", map);
-      return { success: true, source: "modelsdev", modelCount: map.size };
+      const priceMap = transformModelsDev(raw);
+      const priceRows = [...priceMap.entries()].map(([model, pricing]) => ({ model, pricing }));
+      db.saveSyncedPricing("modelsdev", priceRows);
+      setSyncedPricing("modelsdev", priceMap);
+
+      const capsMap = transformModelsDevToCapabilities(raw);
+      const capsRows = [...capsMap.entries()].map(([model, caps]) => ({ model, caps: caps as Record<string, unknown> }));
+      db.saveSyncedCapabilities(capsRows);
+      setSyncedCapabilities(capsMap);
+
+      return { success: true, source: "modelsdev", modelCount: priceMap.size };
     } catch (err) {
       lastErr = err instanceof Error ? err : new Error(String(err));
       if (attempt < MAX_RETRIES) await sleep(2 ** attempt * 1000);
@@ -223,6 +275,13 @@ export function loadSyncedFromDb(db: SyncDB): void {
     }
     setSyncedPricing(source, map);
   }
+
+  const capsRows = db.listSyncedCapabilities();
+  const capsMap = new Map<string, Partial<Caps>>();
+  for (const r of capsRows) {
+    capsMap.set(r.model.toLowerCase(), r.caps as Partial<Caps>);
+  }
+  setSyncedCapabilities(capsMap);
 }
 
 // ─── periodic sync ─────────────────────────────────────
@@ -279,6 +338,10 @@ export function clearSynced(db: SyncDB, source?: PricingSource): void {
   else {
     setSyncedPricing("modelsdev", new Map());
     setSyncedPricing("litellm", new Map());
+  }
+  if (!source || source === "modelsdev") {
+    db.saveSyncedCapabilities([]);
+    setSyncedCapabilities(new Map());
   }
 }
 

@@ -263,13 +263,19 @@ export const PATTERN_CAPABILITIES: Array<{ pattern: string; caps: Partial<Caps> 
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
 
+// Synced capabilities (models.dev). Provider-agnostic, keyed by lowercased
+// model id. Sits BELOW hardcoded exact/pattern entries (which carry richer
+// thinkingFormat/search data models.dev lacks) but ABOVE DEFAULT_CAPABILITIES —
+// so synced only fills models that no hardcoded layer covers (new models).
+let syncedCapabilities = new Map<string, Partial<Caps>>();
+
+export function setSyncedCapabilities(map: Map<string, Partial<Caps>>): void {
+  syncedCapabilities = map;
+}
+
 /**
- * Resolve capabilities for a model using the 4-step fallback chain,
+ * Resolve capabilities for a model using the fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
- *
- * @param {string} provider
- * @param {string} model
- * @returns {object} full capabilities object
  */
 export function getCapabilitiesForModel(provider: string | null, model: string): Caps {
   if (!model) return { ...DEFAULT_CAPABILITIES };
@@ -291,6 +297,10 @@ export function getCapabilitiesForModel(provider: string | null, model: string):
     }
   }
 
-  // 4. Floor
+  // 4. Synced (models.dev) — fills models no hardcoded layer covers
+  const synced = syncedCapabilities.get(baseModel.toLowerCase()) ?? syncedCapabilities.get(model.toLowerCase());
+  if (synced) return { ...DEFAULT_CAPABILITIES, ...synced };
+
+  // 5. Floor
   return { ...DEFAULT_CAPABILITIES };
 }

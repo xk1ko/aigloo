@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { transformModelsDev, transformLiteLLM } from "../src/providers/pricing-sync.js";
+import { transformModelsDev, transformModelsDevToCapabilities, transformLiteLLM } from "../src/providers/pricing-sync.js";
 import { getPricingForModel, setSyncedPricing, setRuntimePricingOverrides, MODEL_PRICING } from "../src/providers/pricing.js";
+import { getCapabilitiesForModel, setSyncedCapabilities, DEFAULT_CAPABILITIES, PATTERN_CAPABILITIES } from "../src/providers/capabilities.js";
 
 describe("transformModelsDev", () => {
   it("maps cost fields verbatim ($/1M already) and skips models without input cost", () => {
@@ -123,5 +124,106 @@ describe("getPricingForModel resolution priority", () => {
     setRuntimePricingOverrides({});
     const p = getPricingForModel("openai", "openai/prefixed-model");
     expect(p?.input).toBe(9);
+  });
+});
+
+describe("transformModelsDevToCapabilities", () => {
+  it("maps modalities, reasoning, tool_call, and limits", () => {
+    const raw = {
+      anthropic: {
+        id: "anthropic",
+        models: {
+          "claude-sonnet-4-5": {
+            id: "claude-sonnet-4-5",
+            reasoning: true,
+            tool_call: true,
+            attachment: true,
+            modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+            limit: { context: 200000, output: 64000 },
+          },
+        },
+      },
+    };
+    const map = transformModelsDevToCapabilities(raw);
+    const caps = map.get("claude-sonnet-4-5");
+    expect(caps).toEqual({
+      vision: true, pdf: true, reasoning: true, tools: true,
+      contextWindow: 200000, maxOutput: 64000,
+    });
+  });
+
+  it("maps audio/video input and image/audio output", () => {
+    const raw = {
+      google: {
+        id: "google",
+        models: {
+          "gemini-2.5-pro": {
+            id: "gemini-2.5-pro",
+            modalities: { input: ["text", "image", "audio", "video"], output: ["text", "image"] },
+          },
+        },
+      },
+    };
+    const map = transformModelsDevToCapabilities(raw);
+    const caps = map.get("gemini-2.5-pro");
+    expect(caps).toEqual({
+      vision: true, audioInput: true, videoInput: true, imageOutput: true,
+    });
+  });
+
+  it("sets tools=false when tool_call is explicitly false", () => {
+    const raw = {
+      x: { id: "x", models: { "embed-only": { id: "embed-only", tool_call: false } } },
+    };
+    const map = transformModelsDevToCapabilities(raw);
+    expect(map.get("embed-only")?.tools).toBe(false);
+  });
+
+  it("skips models with no capability-relevant fields", () => {
+    const raw = {
+      x: { id: "x", models: { "bare-model": { id: "bare-model" } } },
+    };
+    const map = transformModelsDevToCapabilities(raw);
+    expect(map.has("bare-model")).toBe(false);
+  });
+});
+
+describe("getCapabilitiesForModel resolution priority", () => {
+  it("hardcoded pattern beats synced (pattern has thinkingFormat)", () => {
+    setSyncedCapabilities(new Map([["claude-sonnet-4-5", { contextWindow: 999, vision: false }]]));
+    const caps = getCapabilitiesForModel(null, "claude-sonnet-4-5");
+    // PATTERN_CAPABILITIES has *claude*sonnet* → thinkingFormat: claude-budget
+    expect(caps.thinkingFormat).toBe("claude-budget");
+    // synced contextWindow should NOT override pattern
+    expect(caps.contextWindow).not.toBe(999);
+  });
+
+  it("synced fills models not covered by hardcoded", () => {
+    setSyncedCapabilities(new Map([["totally-unknown-model", { vision: true, contextWindow: 500000 }]]));
+    const caps = getCapabilitiesForModel(null, "totally-unknown-model");
+    expect(caps.vision).toBe(true);
+    expect(caps.contextWindow).toBe(500000);
+  });
+
+  it("synced fills above DEFAULT when no hardcoded match", () => {
+    setSyncedCapabilities(new Map([["mystery-model", { reasoning: true, contextWindow: 1000000 }]]));
+    const caps = getCapabilitiesForModel(null, "mystery-model");
+    expect(caps.reasoning).toBe(true);
+    expect(caps.contextWindow).toBe(1000000);
+    // fields not in synced entry fall through to DEFAULT
+    expect(caps.tools).toBe(DEFAULT_CAPABILITIES.tools);
+  });
+
+  it("case-insensitive synced lookup", () => {
+    setSyncedCapabilities(new Map([["mixed-case-model", { vision: true }]]));
+    const caps = getCapabilitiesForModel(null, "Mixed-Case-Model");
+    expect(caps.vision).toBe(true);
+  });
+
+  it("clears synced caps when map is empty", () => {
+    setSyncedCapabilities(new Map([["temp-model", { vision: true }]]));
+    setSyncedCapabilities(new Map());
+    const caps = getCapabilitiesForModel(null, "temp-model");
+    expect(caps.vision).toBe(DEFAULT_CAPABILITIES.vision);
   });
 });

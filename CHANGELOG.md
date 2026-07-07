@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Auto-fetched model pricing** — pricing rates sync from [models.dev](https://models.dev) (primary, 4000+ models) and [LiteLLM](https://github.com/BerriAI/litellm) (backup) every 24h, so cost tracking stays accurate as new models ship without manual `pricing.ts` edits. Synced pricing sits below user overrides (dashboard / `config.yaml` `price_in`/`price_out`) but above hardcoded defaults — manual settings always win, even when set to `0`. New admin endpoints `GET/POST/DELETE /admin/pricing/sync` to check status, trigger a refresh, or clear. Env vars `AIGLOO_PRICING_SYNC_ENABLED` (default `true`) and `AIGLOO_PRICING_SYNC_INTERVAL` (default `86400`s)
+- **Auto-fetched model pricing + capabilities** — pricing rates sync from [models.dev](https://models.dev) (primary, 4000+ models) and [LiteLLM](https://github.com/BerriAI/litellm) (backup) every 24h, so cost tracking stays accurate as new models ship without manual `pricing.ts` edits. Capabilities (vision, reasoning, tools, context window, modalities) also sync from the same models.dev fetch — one fetch updates both. Pricing synced sits below user overrides (dashboard / `config.yaml` `price_in`/`price_out`) but above hardcoded defaults — manual settings always win, even when set to `0`. Capabilities synced sits below hardcoded (which carry richer `thinkingFormat`/`search` data models.dev lacks) but above defaults — fills models no hardcoded layer covers. New admin endpoints `GET/POST/DELETE /admin/pricing/sync` to check status, trigger a refresh, or clear. Env vars `AIGLOO_PRICING_SYNC_ENABLED` (default `true`) and `AIGLOO_PRICING_SYNC_INTERVAL` (default `86400`s)
 
 ## [1.1.5] — 2026-07-07
 

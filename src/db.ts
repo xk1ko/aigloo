@@ -88,6 +88,9 @@ export class UsageDB {
   private readonly insertSyncedPricing;
   private readonly listSyncedPricingStmt;
   private readonly listAllSyncedPricingStmt;
+  private readonly clearSyncedCapsStmt;
+  private readonly insertSyncedCaps;
+  private readonly listSyncedCapsStmt;
   private readonly upsertNotification;
   private readonly getNotification;
   private readonly getAllNotifications;
@@ -177,6 +180,11 @@ export class UsageDB {
         PRIMARY KEY (source, model)
       );
       CREATE INDEX IF NOT EXISTS idx_pricing_synced_model ON pricing_synced(model);
+      CREATE TABLE IF NOT EXISTS capabilities_synced (
+        model TEXT PRIMARY KEY,
+        caps_json TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 0,
@@ -275,6 +283,13 @@ export class UsageDB {
     `);
     this.listSyncedPricingStmt = this.db.prepare(`SELECT * FROM pricing_synced WHERE source = ? ORDER BY model`);
     this.listAllSyncedPricingStmt = this.db.prepare(`SELECT * FROM pricing_synced ORDER BY source, model`);
+    this.clearSyncedCapsStmt = this.db.prepare(`DELETE FROM capabilities_synced`);
+    this.insertSyncedCaps = this.db.prepare(`
+      INSERT INTO capabilities_synced (model, caps_json, fetched_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(model) DO UPDATE SET caps_json = excluded.caps_json, fetched_at = excluded.fetched_at
+    `);
+    this.listSyncedCapsStmt = this.db.prepare(`SELECT * FROM capabilities_synced ORDER BY model`);
     this.upsertNotification = this.db.prepare(`
       INSERT INTO notifications (id, enabled, url, token, chat_id, events, updated_at)
       VALUES (@id, @enabled, @url, @token, @chat_id, @events, @ts)
@@ -706,6 +721,30 @@ export class UsageDB {
       cached: r.cached === null ? null : num(r.cached),
       cache_creation: r.cache_creation === null ? null : num(r.cache_creation),
       reasoning: r.reasoning === null ? null : num(r.reasoning),
+      fetched_at: num(r.fetched_at),
+    }));
+  }
+
+  saveSyncedCapabilities(rows: Array<{ model: string; caps: Record<string, unknown> }>): void {
+    const now = this.now();
+    this.db.exec("BEGIN");
+    try {
+      this.clearSyncedCapsStmt.run();
+      for (const { model, caps } of rows) {
+        this.insertSyncedCaps.run(model, JSON.stringify(caps), now);
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  listSyncedCapabilities(): Array<{ model: string; caps: Record<string, unknown>; fetched_at: number }> {
+    const rows = this.listSyncedCapsStmt.all() as SqlRow[];
+    return rows.map((r) => ({
+      model: String(r.model),
+      caps: JSON.parse(String(r.caps_json ?? "{}")) as Record<string, unknown>,
       fetched_at: num(r.fetched_at),
     }));
   }
