@@ -68,6 +68,19 @@ describe("openSqliteDatabase", () => {
     }
   })();
 
+  it("propagates a real DB-open error instead of silently falling back (better-sqlite3 module loads fine, constructor throws)", () => {
+    class ThrowingBetter {
+      constructor(_path: string) {
+        throw new Error("EACCES: permission denied");
+      }
+    }
+    const requireFn = vi.fn((id: string) => {
+      if (id === "better-sqlite3") return ThrowingBetter;
+      throw new Error(`unexpected require(${id}) — should not reach node:sqlite fallback`);
+    });
+    expect(() => openSqliteDatabase("/no/permission/path", { requireFn })).toThrow("EACCES");
+  });
+
   it.skipIf(!betterSqliteAvailable)(
     "really opens a working database with the real better-sqlite3 driver (no mocks)",
     () => {

@@ -34,19 +34,22 @@ interface OpenSqliteOptions {
  * and cli.ts's --experimental-sqlite injection for 22.5-22.12). Both
  * expose the same exec/prepare/get/all/run shape db.ts's queries use —
  * verified for positional args, @name objects, ON CONFLICT...DO UPDATE,
- * PRAGMA table_info, and FILTER(WHERE) (see .local-plans/sqlite-driver-chain.md).
+ * PRAGMA table_info, and FILTER(WHERE).
  */
 export function openSqliteDatabase(path: string, opts: OpenSqliteOptions = {}): OpenSqliteResult {
   const req = opts.requireFn ?? createRequire(import.meta.url);
 
   if (opts.forceDriver !== "node:sqlite") {
+    let Better: (new (path: string) => DatabaseSyncLike) | undefined;
     try {
-      const Better = req("better-sqlite3") as new (path: string) => DatabaseSyncLike;
-      return { db: new Better(path), driver: "better-sqlite3" };
+      Better = req("better-sqlite3") as new (path: string) => DatabaseSyncLike;
     } catch (e) {
       if (opts.forceDriver === "better-sqlite3") throw e;
       // not installed (optionalDependency skipped — no build tools / no
       // prebuilt binary for this platform) — fall through to node:sqlite.
+    }
+    if (Better) {
+      return { db: new Better(path), driver: "better-sqlite3" };
     }
   }
 
