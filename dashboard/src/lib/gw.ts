@@ -32,6 +32,7 @@ function init(): Gw {
   const config = loadConfig(configPath);
   const dataDir = getDataDir();
   const db = new UsageDB(join(dataDir, "usage.sqlite"));
+  consoleBuffer.push("INFO", `usage DB driver: ${db.driver}`);
   const state = new GatewayState(configPath, config, db);
   const auth = AuthStore.open(dataDir, process.env.AIGLOO_ADMIN_PASSWORD);
   const notifier = new Notifier(db);
