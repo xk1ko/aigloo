@@ -233,6 +233,31 @@ export function setRuntimePricingOverrides(overrides: Record<string, Pricing>): 
   runtimeOverrides = overrides;
 }
 
+// Auto-fetched pricing (models.dev + LiteLLM). Provider-agnostic, keyed by
+// lowercased model id. Sits BELOW runtimeOverrides (user) but ABOVE hardcoded
+// defaults in the resolution chain — user overrides always win, even when 0.
+let syncedModelsDev = new Map<string, Pricing>();
+let syncedLitellm = new Map<string, Pricing>();
+
+export function setSyncedPricing(source: "modelsdev" | "litellm", map: Map<string, Pricing>): void {
+  if (source === "modelsdev") syncedModelsDev = map;
+  else syncedLitellm = map;
+}
+
+export function getSyncedPricingMap(source: "modelsdev" | "litellm"): Map<string, Pricing> {
+  return source === "modelsdev" ? syncedModelsDev : syncedLitellm;
+}
+
+function lookupSynced(provider: string | null, model: string): Pricing | null {
+  const baseModel = (model.includes("/") ? model.split("/").pop() : model) ?? model;
+  const mLower = baseModel.toLowerCase();
+  const md = syncedModelsDev.get(mLower) ?? syncedModelsDev.get(model.toLowerCase());
+  if (md) return md;
+  const ll = syncedLitellm.get(mLower) ?? syncedLitellm.get(model.toLowerCase());
+  if (ll) return ll;
+  return null;
+}
+
 export function getPricingForModel(provider: string | null, model: string): Pricing | null {
   if (!model) return null;
 
@@ -240,6 +265,9 @@ export function getPricingForModel(provider: string | null, model: string): Pric
 
   if (runtimeOverrides[baseModel]) return runtimeOverrides[baseModel];
   if (runtimeOverrides[model]) return runtimeOverrides[model];
+
+  const synced = lookupSynced(provider, model);
+  if (synced) return synced;
 
   if (provider && PROVIDER_PRICING[provider]?.[model]) {
     return PROVIDER_PRICING[provider][model];

@@ -83,6 +83,11 @@ export class UsageDB {
   private readonly upsertPricing;
   private readonly deletePricing;
   private readonly getAllPricing;
+  private readonly clearSyncedPricingStmt;
+  private readonly clearAllSyncedPricingStmt;
+  private readonly insertSyncedPricing;
+  private readonly listSyncedPricingStmt;
+  private readonly listAllSyncedPricingStmt;
   private readonly upsertNotification;
   private readonly getNotification;
   private readonly getAllNotifications;
@@ -160,6 +165,18 @@ export class UsageDB {
         reasoning REAL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS pricing_synced (
+        source TEXT NOT NULL,
+        model TEXT NOT NULL,
+        input REAL,
+        output REAL,
+        cached REAL,
+        cache_creation REAL,
+        reasoning REAL,
+        fetched_at INTEGER NOT NULL,
+        PRIMARY KEY (source, model)
+      );
+      CREATE INDEX IF NOT EXISTS idx_pricing_synced_model ON pricing_synced(model);
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 0,
@@ -246,6 +263,18 @@ export class UsageDB {
     `);
     this.deletePricing = this.db.prepare(`DELETE FROM pricing_overrides WHERE model = ?`);
     this.getAllPricing = this.db.prepare(`SELECT * FROM pricing_overrides ORDER BY model`);
+    this.clearSyncedPricingStmt = this.db.prepare(`DELETE FROM pricing_synced WHERE source = ?`);
+    this.clearAllSyncedPricingStmt = this.db.prepare(`DELETE FROM pricing_synced`);
+    this.insertSyncedPricing = this.db.prepare(`
+      INSERT INTO pricing_synced (source, model, input, output, cached, cache_creation, reasoning, fetched_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(source, model) DO UPDATE SET
+        input = excluded.input, output = excluded.output, cached = excluded.cached,
+        cache_creation = excluded.cache_creation, reasoning = excluded.reasoning,
+        fetched_at = excluded.fetched_at
+    `);
+    this.listSyncedPricingStmt = this.db.prepare(`SELECT * FROM pricing_synced WHERE source = ? ORDER BY model`);
+    this.listAllSyncedPricingStmt = this.db.prepare(`SELECT * FROM pricing_synced ORDER BY source, model`);
     this.upsertNotification = this.db.prepare(`
       INSERT INTO notifications (id, enabled, url, token, chat_id, events, updated_at)
       VALUES (@id, @enabled, @url, @token, @chat_id, @events, @ts)
@@ -639,6 +668,46 @@ export class UsageDB {
       model: string; input: number | null; output: number | null; cached: number | null;
       cache_creation: number | null; reasoning: number | null; updated_at: number;
     }>;
+  }
+
+  /** Full-replace synced rows for one source. Synced pricing never touches user overrides (pricing_overrides) — it sits below runtimeOverrides in the resolution chain. */
+  saveSyncedPricing(source: string, rows: Array<{ model: string; pricing: { input: number; output: number; cached?: number; cache_creation?: number; reasoning?: number } }>): void {
+    const now = this.now();
+    this.db.exec("BEGIN");
+    try {
+      this.clearSyncedPricingStmt.run(source);
+      for (const { model, pricing } of rows) {
+        this.insertSyncedPricing.run(
+          source, model,
+          pricing.input, pricing.output,
+          pricing.cached ?? null, pricing.cache_creation ?? null, pricing.reasoning ?? null,
+          now,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  clearSyncedPricing(source?: string): void {
+    if (source) this.clearSyncedPricingStmt.run(source);
+    else this.clearAllSyncedPricingStmt.run();
+  }
+
+  listSyncedPricing(source?: string): Array<{ source: string; model: string; input: number; output: number; cached: number | null; cache_creation: number | null; reasoning: number | null; fetched_at: number }> {
+    const rows = (source ? this.listSyncedPricingStmt.all(source) : this.listAllSyncedPricingStmt.all()) as SqlRow[];
+    return rows.map((r) => ({
+      source: String(r.source),
+      model: String(r.model),
+      input: num(r.input),
+      output: num(r.output),
+      cached: r.cached === null ? null : num(r.cached),
+      cache_creation: r.cache_creation === null ? null : num(r.cache_creation),
+      reasoning: r.reasoning === null ? null : num(r.reasoning),
+      fetched_at: num(r.fetched_at),
+    }));
   }
 }
 

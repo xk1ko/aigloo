@@ -64,6 +64,7 @@ First run bootstraps everything. Subsequent runs start instantly.
 
 - **Format translation** — OpenAI ↔ Anthropic on the fly, streaming included
 - **Routing & fallback** — use `provider/model` directly (key round-robin) or define combo aliases for multi-provider fallback chains; auto-rotates keys on 429/5xx/timeout
+- **Pricing** — per-model cost tracking with auto-fetched rates from [models.dev](https://models.dev) (4000+ models) and [LiteLLM](https://github.com/BerriAI/litellm) as backup; manual overrides always win
 - **Token savers** — RTK compresses tool results, caveman trims prose, ponytail nudges minimal code, headroom compresses context — with per-request $ savings tracked on the Usage page
 - **Access keys** — share gateway keys with model allowlist, rate limit, spend cap, and expiry
 - **Budgets** — rolling spend caps (global/provider/model/key) with live countdown and per-token-type cost tracking
@@ -220,6 +221,8 @@ Headroom is the only external dependency — install from [chopratejas/headroom]
 | `AIGLOO_ADMIN_PASSWORD` | Admin password — seeds on first boot, then stored as scrypt hash in `auth.json`. Default `123456` |
 | `AIGLOO_PORT` | Listen port (default 18080) |
 | `SESSION_SECRET` | Dashboard session cookie signing key. Auto-generated and persisted if unset |
+| `AIGLOO_PRICING_SYNC_ENABLED` | Auto-fetch model pricing from models.dev + LiteLLM (default `true`). Set `false` to disable |
+| `AIGLOO_PRICING_SYNC_INTERVAL` | Pricing sync interval in seconds (default `86400` = 24h) |
 
 Admin password and provider keys never reach the browser — the dashboard proxies `/admin/*` server-side.
 

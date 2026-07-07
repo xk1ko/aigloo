@@ -59,6 +59,7 @@ import { handle, GatewayError } from "./handler.js";
 import { fetchModels } from "../providers/free.js";
 import { consoleBuffer } from "./console-buffer.js";
 import { getPricingForModel, setRuntimePricingOverrides, type Pricing } from "../providers/pricing.js";
+import { loadSyncedFromDb, startPeriodicSync, syncAll, syncModelsDev, syncLitellm, getSyncStatus, clearSynced, type PricingSource } from "../providers/pricing-sync.js";
 import { MODEL_CAPABILITIES, PROVIDER_CAPABILITIES, PATTERN_CAPABILITIES, DEFAULT_CAPABILITIES } from "../providers/capabilities.js";
 import { getHeadroomStatus, isLoopbackHeadroomUrl, DEFAULT_HEADROOM_URL } from "../headroom/detect.js";
 import { startHeadroomProxy, stopHeadroomProxy, getManagedPid, getHeadroomLogTail } from "../headroom/process.js";
@@ -82,6 +83,10 @@ let pricingInitialized = false;
 
 export function initAdmin(deps: AdminDeps): void {
   reloadPricingOverrides(deps);
+  if (deps.db) {
+    loadSyncedFromDb(deps.db);
+    startPeriodicSync(deps.db, deps.log);
+  }
   pricingInitialized = true;
 }
 
@@ -640,6 +645,27 @@ export async function handleAdmin(
       }),
     }));
     return { status: 200, body: { providers, overrides } };
+  }
+
+  // ---- pricing sync ----
+  if (s[0] === "pricing" && s[1] === "sync") {
+    if (m === "GET") {
+      return { status: 200, body: getSyncStatus() };
+    }
+    if (m === "POST") {
+      if (!deps.db) return { status: 500, body: { error: "db not available" } };
+      const source = typeof b.source === "string" ? (b.source as PricingSource) : undefined;
+      const result = source === "modelsdev" || source === "litellm"
+        ? (source === "modelsdev" ? syncModelsDev : syncLitellm)(deps.db)
+        : syncAll(deps.db).then((r) => ({ success: r.modelsdev.success && r.litellm.success, source: "all" as const, modelCount: r.modelsdev.modelCount + r.litellm.modelCount }));
+      return { status: 200, body: await result };
+    }
+    if (m === "DELETE") {
+      if (!deps.db) return { status: 500, body: { error: "db not available" } };
+      const source = typeof b.source === "string" ? (b.source as PricingSource) : undefined;
+      clearSynced(deps.db, source);
+      return { status: 200, body: { ok: true } };
+    }
   }
 
   if (m === "PUT" && s.length === 2 && s[0] === "pricing") {
