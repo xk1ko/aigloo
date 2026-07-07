@@ -1,19 +1,13 @@
 /**
- * Usage tracking store, backed by the built-in node:sqlite (no native build).
- * One `usage` row per upstream request that produced usage; an optional `logs`
- * table holds request/response summaries for debugging. Unified under DATA_DIR
+ * Usage tracking store, backed by SQLite (better-sqlite3 if available,
+ * else the built-in node:sqlite — see sqliteDriver.ts). One `usage` row
+ * per upstream request that produced usage; an optional `logs` table
+ * holds request/response summaries for debugging. Unified under DATA_DIR
  * (default ./data).
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createRequire } from "node:module";
-
-// node:sqlite is a recent builtin; require it dynamically so bundlers/test
-// transformers that don't yet know the `node:sqlite` specifier don't choke.
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
-  DatabaseSync: typeof import("node:sqlite").DatabaseSync;
-};
-type DatabaseSync = import("node:sqlite").DatabaseSync;
+import { openSqliteDatabase, type DatabaseSyncLike, type SqliteDriverName } from "./sqliteDriver.js";
 
 export interface UsageRow {
   ts: number;
@@ -81,7 +75,8 @@ type SqlRow = Record<string, unknown>;
 const num = (v: unknown): number => Number(v ?? 0);
 
 export class UsageDB {
-  private readonly db: DatabaseSync;
+  private readonly db: DatabaseSyncLike;
+  readonly driver: SqliteDriverName;
   private readonly insertUsage;
   private readonly insertLog;
   private readonly upsertPricing;
@@ -97,9 +92,20 @@ export class UsageDB {
   private readonly clearAlertStateStmt;
   private readonly now: () => number;
 
-  constructor(path: string, now: () => number = Date.now) {
+  constructor(
+    path: string,
+    now: () => number = Date.now,
+    driverOpts: { forceDriver?: SqliteDriverName } = {},
+  ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
+    // AIGLOO_TEST_FORCE_SQLITE_DRIVER lets the existing test suite run
+    // unmodified against both drivers for parity checking (see Task 3 in
+    // .local-plans/sqlite-driver-chain.md) — never set outside tests.
+    const forceDriver =
+      driverOpts.forceDriver ?? (process.env.AIGLOO_TEST_FORCE_SQLITE_DRIVER as SqliteDriverName | undefined);
+    const { db, driver } = openSqliteDatabase(path, { forceDriver });
+    this.db = db;
+    this.driver = driver;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
