@@ -9,6 +9,10 @@ import { Notifier } from "@/gw/core/notifier.js";
 import { RateLimiter } from "@/gw/core/ratelimit.js";
 import { consoleBuffer } from "@/gw/core/console-buffer.js";
 import { initAdmin } from "@/gw/core/admin-handler.js";
+import { preInitSqlJs } from "@/gw/sqliteDriver.js";
+
+// Cache sql.js WASM via TLA — openSqliteDatabase is sync, needs the module pre-loaded.
+await preInitSqlJs();
 
 export interface Gw {
   state: GatewayState;

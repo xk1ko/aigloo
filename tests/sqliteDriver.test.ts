@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createRequire } from "node:module";
-import { openSqliteDatabase } from "../src/sqliteDriver.js";
+import { openSqliteDatabase, preInitSqlJs } from "../src/sqliteDriver.js";
 
 describe("openSqliteDatabase", () => {
   it("uses better-sqlite3 when its require succeeds", () => {
@@ -28,6 +28,32 @@ describe("openSqliteDatabase", () => {
     const { driver, db } = openSqliteDatabase(":memory:", { requireFn });
     expect(driver).toBe("node:sqlite");
     expect(db).toBeInstanceOf(FakeNodeSqlite);
+  });
+
+  it("falls back to sql.js when both better-sqlite3 and node:sqlite fail", () => {
+    const fakeSqlJs = { Database: class { constructor() {} } };
+    const requireFn = vi.fn((id: string) => {
+      if (id === "better-sqlite3") throw new Error("not installed");
+      if (id === "node:sqlite") throw new Error("not available");
+      throw new Error(`unexpected require(${id})`);
+    });
+    const { driver } = openSqliteDatabase(":memory:", { requireFn, sqlJsModule: fakeSqlJs });
+    expect(driver).toBe("sql.js");
+  });
+
+  it("forceDriver: 'sql.js' skips better-sqlite3 and node:sqlite entirely", () => {
+    const fakeSqlJs = { Database: class { constructor() {} } };
+    const requireFn = vi.fn(() => { throw new Error("should never be called"); });
+    const { driver } = openSqliteDatabase(":memory:", { forceDriver: "sql.js", requireFn, sqlJsModule: fakeSqlJs });
+    expect(driver).toBe("sql.js");
+    expect(requireFn).not.toHaveBeenCalled();
+  });
+
+  it("throws when all three drivers are unavailable", () => {
+    const requireFn = vi.fn((id: string) => {
+      throw new Error(`unavailable: ${id}`);
+    });
+    expect(() => openSqliteDatabase(":memory:", { requireFn })).toThrow("No SQLite driver available");
   });
 
   it("forceDriver: 'node:sqlite' skips the better-sqlite3 probe entirely", () => {
@@ -93,4 +119,15 @@ describe("openSqliteDatabase", () => {
       db.close();
     },
   );
+});
+
+describe("preInitSqlJs", () => {
+  it("does not throw when sql.js is available", async () => {
+    await expect(preInitSqlJs()).resolves.not.toThrow();
+  });
+
+  it("is idempotent — second call is a no-op", async () => {
+    await preInitSqlJs();
+    await preInitSqlJs();
+  });
 });

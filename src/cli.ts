@@ -17,7 +17,8 @@
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, copyFileSync, readFileSync, writeFileSync, mkdirSync, statSync, readlinkSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, delimiter } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { ensureTrayRuntime } from "./cli/tray/trayRuntime.js";
@@ -262,6 +263,8 @@ function spawnDashboard(): ChildProcess {
   // no-op there and on anything newer, so always safe to pass.
   const nodeOptions = [process.env.NODE_OPTIONS, preload, "--experimental-sqlite"].filter(Boolean).join(" ");
 
+  const runtimeNodeModules = join(getDataDir(), "runtime", "node_modules");
+
   const env = {
     ...process.env,
     PORT: String(GATEWAY_PORT),
@@ -276,22 +279,48 @@ function spawnDashboard(): ChildProcess {
   };
 
   if (existsSync(standaloneServer)) {
+    const nodePath = [join(standaloneDir, "vendor"), runtimeNodeModules, process.env.NODE_PATH]
+      .filter(Boolean).join(delimiter);
     return spawn("node", [standaloneServer], {
       cwd: standaloneDir,
       stdio: "inherit",
       detached: true,
-      env: { ...env, NODE_PATH: join(standaloneDir, "vendor") },
+      env: { ...env, NODE_PATH: nodePath },
     });
   }
 
   const prod = existsSync(join(dashboardDir, ".next", "BUILD_ID"));
   const args = prod ? ["run", "start"] : ["run", "dev"];
+  const nodePath = [runtimeNodeModules, process.env.NODE_PATH].filter(Boolean).join(delimiter);
   return spawn("npm", args, {
     cwd: dashboardDir,
     stdio: "inherit",
     detached: true,
-    env,
+    env: { ...env, NODE_PATH: nodePath },
   });
+}
+
+function ensureBetterSqlite3(): void {
+  const runtimeDir = join(getDataDir(), "runtime");
+  const runtimeNodeModules = join(runtimeDir, "node_modules");
+  const marker = join(runtimeNodeModules, "better-sqlite3", "package.json");
+
+  const req = createRequire(import.meta.url);
+  try { req("better-sqlite3"); return; } catch {}
+  if (existsSync(marker)) return;
+
+  mkdirSync(runtimeDir, { recursive: true });
+  if (!existsSync(join(runtimeDir, "package.json"))) {
+    writeFileSync(join(runtimeDir, "package.json"), JSON.stringify({ private: true }));
+  }
+  console.log("  installing better-sqlite3 (fastest SQLite driver)…");
+  try {
+    execSync("npm install better-sqlite3 --no-audit --no-fund --prefer-online --no-save", {
+      cwd: runtimeDir, stdio: "pipe", timeout: 60_000,
+    });
+  } catch {
+    // no build tools / no network — node:sqlite or sql.js will be used at runtime
+  }
 }
 
 /**
@@ -347,6 +376,8 @@ function ensureSetup(): void {
       execSync("npm run build", { cwd: dashboardDir, stdio: "inherit" });
     }
   }
+
+  ensureBetterSqlite3();
 }
 
 function prompt(q: string): Promise<string> {
