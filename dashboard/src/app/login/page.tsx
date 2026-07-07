@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Button, Input, Field } from "@/components/Button";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,8 +26,12 @@ export default function LoginPage() {
       body: JSON.stringify({ password }),
     });
     if (res.ok) {
-      router.replace("/");
-      router.refresh();
+      // Hard navigation, not router.replace()/router.refresh() — the App
+      // Router's client-side cache holds stale redirect-to-login RSC
+      // payloads for every page visited pre-login, and refresh() only
+      // busts the cache for the current route. A full navigation clears
+      // it all, so subsequent Link clicks don't bounce back to /login.
+      window.location.href = "/";
     } else {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       setError(body.error ?? "login failed");
