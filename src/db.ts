@@ -20,6 +20,7 @@ export interface UsageRow {
   cached_tokens: number;
   cache_creation_tokens: number;
   cost: number;
+  cost_out: number;
   status: number;
   latency_ms: number;
   stream: number; // 0/1
@@ -57,9 +58,9 @@ export interface UsageTotals {
 }
 
 export interface UsageSummary {
-  total: { requests: number; tokens_in: number; tokens_out: number; cost: number };
-  by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
-  by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
+  total: { requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number };
+  by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
+  by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
 }
 
 export interface UsageSeriesPoint {
@@ -119,6 +120,7 @@ export class UsageDB {
         cached_tokens INTEGER NOT NULL DEFAULT 0,
         cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
         cost REAL NOT NULL DEFAULT 0,
+        cost_out REAL NOT NULL DEFAULT 0,
         status INTEGER NOT NULL,
         latency_ms INTEGER NOT NULL DEFAULT 0,
         stream INTEGER NOT NULL DEFAULT 0,
@@ -219,14 +221,17 @@ export class UsageDB {
     if (!cols.some((c) => String(c.name) === "headroom_cost_saved")) {
       this.db.exec(`ALTER TABLE usage ADD COLUMN headroom_cost_saved REAL NOT NULL DEFAULT 0`);
     }
+    if (!cols.some((c) => String(c.name) === "cost_out")) {
+      this.db.exec(`ALTER TABLE usage ADD COLUMN cost_out REAL NOT NULL DEFAULT 0`);
+    }
     const alertCols = this.db.prepare(`PRAGMA table_info(alert_log)`).all() as SqlRow[];
     if (!alertCols.some((c) => String(c.name) === "channel")) {
       this.db.exec(`ALTER TABLE alert_log ADD COLUMN channel TEXT NOT NULL DEFAULT ''`);
     }
     this.now = now;
     this.insertUsage = this.db.prepare(`
-      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out, headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level, rtk_cost_saved, headroom_cost_saved)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO usage (ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens, cost, cost_out, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out, headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level, rtk_cost_saved, headroom_cost_saved)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.insertLog = this.db.prepare(`
       INSERT INTO logs (ts, direction, provider, status, request_summary, response_summary)
@@ -279,6 +284,7 @@ export class UsageDB {
       | "ponytail_level"
       | "rtk_cost_saved"
       | "headroom_cost_saved"
+      | "cost_out"
     > & {
       ts?: number;
       client_key?: string;
@@ -292,6 +298,7 @@ export class UsageDB {
       ponytail_level?: string;
       rtk_cost_saved?: number;
       headroom_cost_saved?: number;
+      cost_out?: number;
     },
   ): void {
     this.insertUsage.run(
@@ -305,6 +312,7 @@ export class UsageDB {
       row.cached_tokens,
       row.cache_creation_tokens ?? 0,
       row.cost,
+      row.cost_out ?? 0,
       row.status,
       row.latency_ms,
       row.stream,
@@ -336,7 +344,8 @@ export class UsageDB {
     const total = this.db
       .prepare(
         `SELECT COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
-                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost
+                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
+                COALESCE(SUM(cost_out),0) cost_out
          FROM usage WHERE ts >= ?`,
       )
       .get(sinceMs) as SqlRow;
@@ -344,7 +353,8 @@ export class UsageDB {
     const by_provider = this.db
       .prepare(
         `SELECT provider, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
-                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost
+                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
+                COALESCE(SUM(cost_out),0) cost_out
          FROM usage WHERE ts >= ? GROUP BY provider ORDER BY cost DESC`,
       )
       .all(sinceMs) as SqlRow[];
@@ -352,7 +362,8 @@ export class UsageDB {
     const by_model = this.db
       .prepare(
         `SELECT alias, model, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
-                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost
+                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
+                COALESCE(SUM(cost_out),0) cost_out
          FROM usage WHERE ts >= ? GROUP BY alias, model ORDER BY cost DESC`,
       )
       .all(sinceMs) as SqlRow[];
@@ -363,6 +374,7 @@ export class UsageDB {
         tokens_in: num(total.tokens_in),
         tokens_out: num(total.tokens_out),
         cost: num(total.cost),
+        cost_out: num(total.cost_out),
       },
       by_provider: by_provider.map((r) => ({
         provider: String(r.provider),
@@ -370,6 +382,7 @@ export class UsageDB {
         tokens_in: num(r.tokens_in),
         tokens_out: num(r.tokens_out),
         cost: num(r.cost),
+        cost_out: num(r.cost_out),
       })),
       by_model: by_model.map((r) => ({
         alias: String(r.alias),
@@ -378,6 +391,7 @@ export class UsageDB {
         tokens_in: num(r.tokens_in),
         tokens_out: num(r.tokens_out),
         cost: num(r.cost),
+        cost_out: num(r.cost_out),
       })),
     };
   }
@@ -450,7 +464,7 @@ export class UsageDB {
     const rows = this.db
       .prepare(
         `SELECT ts, alias, provider, model, tokens_in, tokens_out, reasoning_tokens, cached_tokens, cache_creation_tokens,
-                 cost, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out,
+                 cost, cost_out, status, latency_ms, stream, client_key, rtk_bytes_in, rtk_bytes_out,
                  headroom_tokens_before, headroom_tokens_after, caveman_level, ponytail_level,
                  rtk_cost_saved, headroom_cost_saved
          FROM usage ORDER BY id DESC LIMIT ?`,
@@ -467,6 +481,7 @@ export class UsageDB {
       cached_tokens: num(r.cached_tokens),
       cache_creation_tokens: num(r.cache_creation_tokens),
       cost: num(r.cost),
+      cost_out: num(r.cost_out),
       status: num(r.status),
       latency_ms: num(r.latency_ms),
       stream: num(r.stream),
@@ -670,4 +685,9 @@ export function computeCost(b: CostBreakdown): number {
   cost += b.tokensOut * (b.priceOut / 1_000_000);
   if (b.reasoningTokens > 0) cost += b.reasoningTokens * (b.priceReasoning / 1_000_000);
   return cost;
+}
+
+export function computeCostOut(b: CostBreakdown): number {
+  return b.tokensOut * (b.priceOut / 1_000_000)
+    + b.reasoningTokens * (b.priceReasoning / 1_000_000);
 }

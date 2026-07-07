@@ -73,7 +73,7 @@ function extractUpstreamMessage(body?: string): string {
 import type { CanonicalChunk } from "../stream/chunk.js";
 import type { KeyPool } from "./keypool.js";
 import { executeWithFallback } from "./fallback.js";
-import { type UsageDB, computeCost } from "../db.js";
+import { type UsageDB, computeCost, computeCostOut } from "../db.js";
 import { compressMessages } from "../rtk/index.js";
 import { injectInto } from "../inject/index.js";
 import { parseSuffix, captureThinking, type ThinkingConfig } from "../translator/thinkingUnified.js";
@@ -187,6 +187,10 @@ function recordUsage(
     cached_tokens: cachedTokens,
     cache_creation_tokens: cacheCreationTokens,
     cost: computeCost({
+      tokensIn, tokensOut, cachedTokens, cacheCreationTokens, reasoningTokens,
+      priceIn, priceOut, priceCached, priceCacheCreation, priceReasoning,
+    }),
+    cost_out: computeCostOut({
       tokensIn, tokensOut, cachedTokens, cacheCreationTokens, reasoningTokens,
       priceIn, priceOut, priceCached, priceCacheCreation, priceReasoning,
     }),

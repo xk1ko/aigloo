@@ -148,15 +148,15 @@ export function UsageView() {
  * Caveman/ponytail bias model *output length*, not a single request's
  * before/after — there's no per-request counterfactual like RTK/Headroom
  * have. Estimate savings by comparing each active level's avg output
- * tokens against the "off" baseline avg in the same window, times a
- * blended $/token rate (total window cost ÷ total window tokens). This is
- * a population-level estimate, not a measurement — callers must label it
+ * tokens against the "off" baseline avg in the same window, times the
+ * output-only $/token rate (total window cost_out ÷ total window
+ * tokens_out). This is a population-level estimate, not a measurement — callers must label it
  * "est." and never merge it silently with RTK/Headroom's real cost_saved
  * without that label.
  */
 function estimateLevelSavings(
   rows: SavingsSummary["by_caveman_level"],
-  blendedRatePerToken: number,
+  outRatePerToken: number,
 ): { tokensSaved: number; costSaved: number; requests: number } {
   const offAvg = rows.find((r) => r.level === "off")?.avg_tokens_out ?? 0;
   let tokensSaved = 0;
@@ -166,7 +166,7 @@ function estimateLevelSavings(
     tokensSaved += Math.max(0, offAvg - r.avg_tokens_out) * r.requests;
     requests += r.requests;
   }
-  return { tokensSaved, costSaved: tokensSaved * blendedRatePerToken, requests };
+  return { tokensSaved, costSaved: tokensSaved * outRatePerToken, requests };
 }
 
 function SavingsPanel({
@@ -185,10 +185,10 @@ function SavingsPanel({
     ? Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)
     : 0;
 
-  const totalTokens = (summary?.total.tokens_in ?? 0) + (summary?.total.tokens_out ?? 0);
-  const blendedRate = totalTokens > 0 ? (summary?.total.cost ?? 0) / totalTokens : 0;
-  const caveman = estimateLevelSavings(savings?.by_caveman_level ?? [], blendedRate);
-  const ponytail = estimateLevelSavings(savings?.by_ponytail_level ?? [], blendedRate);
+  const outTokens = summary?.total.tokens_out ?? 0;
+  const outRate = outTokens > 0 ? (summary?.total.cost_out ?? 0) / outTokens : 0;
+  const caveman = estimateLevelSavings(savings?.by_caveman_level ?? [], outRate);
+  const ponytail = estimateLevelSavings(savings?.by_ponytail_level ?? [], outRate);
 
   const rtkCost = savings?.rtk.cost_saved ?? 0;
   const headroomCost = savings?.headroom.cost_saved ?? 0;

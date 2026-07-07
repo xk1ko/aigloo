@@ -293,9 +293,9 @@ export interface UsageLog {
   client_key: string;
 }
 export interface UsageSummary {
-  total: { requests: number; tokens_in: number; tokens_out: number; cost: number };
-  by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
-  by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
+  total: { requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number };
+  by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
+  by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
 }
 export interface UsageSeriesPoint {
   ts: number;

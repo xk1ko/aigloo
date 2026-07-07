@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { UsageDB, computeCost } from "../src/db.js";
+import { UsageDB, computeCost, computeCostOut } from "../src/db.js";
 
 /** Fresh in-memory DB with a controllable clock. */
 function db(now = () => 1_000_000) {
@@ -18,22 +18,34 @@ describe("computeCost", () => {
   });
 });
 
+describe("computeCostOut", () => {
+  it("prices output + reasoning tokens only", () => {
+    const b = { tokensIn: 1_000_000, tokensOut: 500_000, cachedTokens: 0, cacheCreationTokens: 0, reasoningTokens: 100_000, priceIn: 3, priceOut: 15, priceCached: 0, priceCacheCreation: 0, priceReasoning: 10 };
+    expect(computeCostOut(b)).toBeCloseTo(500_000 * 15 / 1_000_000 + 100_000 * 10 / 1_000_000);
+  });
+  it("is zero when output and reasoning are zero", () => {
+    expect(computeCostOut({ tokensIn: 1_000_000, tokensOut: 0, cachedTokens: 0, cacheCreationTokens: 0, reasoningTokens: 0, priceIn: 3, priceOut: 15, priceCached: 0, priceCacheCreation: 0, priceReasoning: 0 })).toBe(0);
+  });
+});
+
 describe("UsageDB.record + summary", () => {
   it("aggregates totals, by-provider, and by-model", () => {
     const d = db();
-    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 100, tokens_out: 50, cached_tokens: 0, cost: 0.5, status: 200, latency_ms: 120, stream: 0 });
-    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 200, tokens_out: 80, cached_tokens: 0, cost: 1.0, status: 200, latency_ms: 90, stream: 1 });
-    d.record({ alias: "claude", provider: "an", model: "claude-3", tokens_in: 50, tokens_out: 20, cached_tokens: 10, cost: 0.2, status: 200, latency_ms: 200, stream: 0 });
+    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 100, tokens_out: 50, cached_tokens: 0, cost: 0.5, cost_out: 0.3, status: 200, latency_ms: 120, stream: 0 });
+    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 200, tokens_out: 80, cached_tokens: 0, cost: 1.0, cost_out: 0.6, status: 200, latency_ms: 90, stream: 1 });
+    d.record({ alias: "claude", provider: "an", model: "claude-3", tokens_in: 50, tokens_out: 20, cached_tokens: 10, cost: 0.2, cost_out: 0.15, status: 200, latency_ms: 200, stream: 0 });
 
     const s = d.summary();
     expect(s.total.requests).toBe(3);
     expect(s.total.tokens_in).toBe(350);
     expect(s.total.tokens_out).toBe(150);
     expect(s.total.cost).toBeCloseTo(1.7);
+    expect(s.total.cost_out).toBeCloseTo(1.05);
 
     const oa = s.by_provider.find((p) => p.provider === "oa")!;
     expect(oa.requests).toBe(2);
     expect(oa.tokens_in).toBe(300);
+    expect(oa.cost_out).toBeCloseTo(0.9);
 
     const gpt = s.by_model.find((m) => m.model === "gpt-4o")!;
     expect(gpt.requests).toBe(2);
