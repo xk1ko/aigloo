@@ -4,4 +4,4 @@
 /build
 .env.local
 *.tsbuildinfo
-next-env.d.ts.tmp
+next-env.d.ts
