@@ -146,6 +146,26 @@ export function ConfigEditor() {
             </div>
           </div>
 
+          {/* notifications */}
+          <div className="overflow-hidden rounded-brand-lg card">
+            <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
+              <div>
+                <h2 className="text-[14px] font-semibold text-text">Alerts &amp; Notifications</h2>
+                <p className="text-[12px] text-text-muted">webhook · telegram · discord</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link href="/notifications" className="inline-flex items-center justify-center gap-1.5 rounded-brand px-3.5 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer glass text-text-muted border-transparent hover:text-text whitespace-nowrap">
+                  <Icon name="arrow_forward" size={14} /> Configure
+                </Link>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-[13px] text-text-muted">
+                Configure webhook, Telegram, or Discord notifications to get alerted when budgets hit their threshold or run out.
+              </p>
+            </div>
+          </div>
+
           {/* backup */}
           <div className="overflow-hidden rounded-brand-lg card">
             <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
@@ -167,26 +187,6 @@ export function ConfigEditor() {
               <p className="text-[13px] text-text-muted">
                 Export downloads the live config as YAML with unmasked keys — keep it safe. Import loads a file into
                 the raw editor below for review; it only applies when you Save there.
-              </p>
-            </div>
-          </div>
-
-          {/* notifications */}
-          <div className="overflow-hidden rounded-brand-lg card">
-            <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
-              <div>
-                <h2 className="text-[14px] font-semibold text-text">Alerts &amp; Notifications</h2>
-                <p className="text-[12px] text-text-muted">webhook · telegram · discord</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link href="/notifications" className="inline-flex items-center justify-center gap-1.5 rounded-brand px-3.5 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer glass text-text-muted border-transparent hover:text-text whitespace-nowrap">
-                  <Icon name="arrow_forward" size={14} /> Configure
-                </Link>
-              </div>
-            </div>
-            <div className="px-5 py-4">
-              <p className="text-[13px] text-text-muted">
-                Configure webhook, Telegram, or Discord notifications to get alerted when budgets hit their threshold or run out.
               </p>
             </div>
           </div>
