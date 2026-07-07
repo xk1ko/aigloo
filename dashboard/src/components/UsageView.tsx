@@ -136,7 +136,7 @@ export function UsageView() {
           </div>
 
           <div className="mt-3">
-            <SavingsPanel savings={savings} loading={loading} />
+            <SavingsPanel savings={savings} summary={summary} loading={loading} />
           </div>
         </>
       )}
@@ -144,15 +144,56 @@ export function UsageView() {
   );
 }
 
-function SavingsPanel({ savings, loading }: { savings: SavingsSummary | null; loading: boolean }) {
+/**
+ * Caveman/ponytail bias model *output length*, not a single request's
+ * before/after — there's no per-request counterfactual like RTK/Headroom
+ * have. Estimate savings by comparing each active level's avg output
+ * tokens against the "off" baseline avg in the same window, times a
+ * blended $/token rate (total window cost ÷ total window tokens). This is
+ * a population-level estimate, not a measurement — callers must label it
+ * "est." and never merge it silently with RTK/Headroom's real cost_saved
+ * without that label.
+ */
+function estimateLevelSavings(
+  rows: SavingsSummary["by_caveman_level"],
+  blendedRatePerToken: number,
+): { tokensSaved: number; costSaved: number; requests: number } {
+  const offAvg = rows.find((r) => r.level === "off")?.avg_tokens_out ?? 0;
+  let tokensSaved = 0;
+  let requests = 0;
+  for (const r of rows) {
+    if (r.level === "off" || r.requests === 0) continue;
+    tokensSaved += Math.max(0, offAvg - r.avg_tokens_out) * r.requests;
+    requests += r.requests;
+  }
+  return { tokensSaved, costSaved: tokensSaved * blendedRatePerToken, requests };
+}
+
+function SavingsPanel({
+  savings,
+  summary,
+  loading,
+}: {
+  savings: SavingsSummary | null;
+  summary: UsageSummary | null;
+  loading: boolean;
+}) {
   const rtkPct = savings && savings.rtk.bytes_in > 0
     ? Math.round((1 - savings.rtk.bytes_out / savings.rtk.bytes_in) * 100)
     : 0;
   const headroomPct = savings && savings.headroom.tokens_before > 0
     ? Math.round((1 - savings.headroom.tokens_after / savings.headroom.tokens_before) * 100)
     : 0;
-  const levelRows = (rows: SavingsSummary["by_caveman_level"]) =>
-    rows.filter((r) => r.requests > 0 && r.level !== "off");
+
+  const totalTokens = (summary?.total.tokens_in ?? 0) + (summary?.total.tokens_out ?? 0);
+  const blendedRate = totalTokens > 0 ? (summary?.total.cost ?? 0) / totalTokens : 0;
+  const caveman = estimateLevelSavings(savings?.by_caveman_level ?? [], blendedRate);
+  const ponytail = estimateLevelSavings(savings?.by_ponytail_level ?? [], blendedRate);
+
+  const rtkCost = savings?.rtk.cost_saved ?? 0;
+  const headroomCost = savings?.headroom.cost_saved ?? 0;
+  const totalSaved = rtkCost + headroomCost + caveman.costSaved + ponytail.costSaved;
+  const anySavings = (savings?.rtk.hits ?? 0) > 0 || (savings?.headroom.hits ?? 0) > 0 || caveman.requests > 0 || ponytail.requests > 0;
 
   return (
     <div className={`overflow-hidden rounded-brand-lg card ${loading ? "opacity-50" : ""}`}>
@@ -160,41 +201,73 @@ function SavingsPanel({ savings, loading }: { savings: SavingsSummary | null; lo
         <Icon name="savings" size={15} className="text-text-subtle" />
         <h2 className="text-[13px] font-semibold text-text">Token Saver Savings</h2>
       </div>
-      <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">RTK</div>
-          {savings && savings.rtk.hits > 0 ? (
-            <div className="mt-1 text-[13px] text-text">
-              <span className="font-bold text-accent">~{fmt.cost(savings.rtk.cost_saved)} saved</span> — {fmt.compact(savings.rtk.bytes_in - savings.rtk.bytes_out)} bytes trimmed ({rtkPct}%) across {fmt.int(savings.rtk.hits)} request(s)
-            </div>
-          ) : (
-            <div className="mt-1 text-[13px] text-text-subtle">No compressible tool output in this window.</div>
-          )}
-          <div className="mt-4 text-[11px] font-medium uppercase tracking-wider text-text-subtle">Headroom</div>
-          {savings && savings.headroom.hits > 0 ? (
-            <div className="mt-1 text-[13px] text-text">
-              <span className="font-bold text-accent">~{fmt.cost(savings.headroom.cost_saved)} saved</span> — {fmt.compact(savings.headroom.tokens_before - savings.headroom.tokens_after)} tokens trimmed ({headroomPct}%) across {fmt.int(savings.headroom.hits)} request(s)
-            </div>
-          ) : (
-            <div className="mt-1 text-[13px] text-text-subtle">Not enabled, or no requests in this window.</div>
-          )}
-        </div>
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">Avg output tokens by level</div>
-          <div className="mt-1 space-y-1 text-[13px] text-text">
-            {[...levelRows(savings?.by_caveman_level ?? []).map((r) => ({ ...r, saver: "Caveman" })),
-              ...levelRows(savings?.by_ponytail_level ?? []).map((r) => ({ ...r, saver: "Ponytail" }))]
-              .map((r) => (
-                <div key={`${r.saver}-${r.level}`} className="flex items-center justify-between">
-                  <span className="text-text-subtle">{r.saver} · {r.level}</span>
-                  <span className="tnum">{fmt.compact(r.avg_tokens_out)} avg out ({fmt.int(r.requests)} req)</span>
-                </div>
-              ))}
-            {levelRows(savings?.by_caveman_level ?? []).length === 0 && levelRows(savings?.by_ponytail_level ?? []).length === 0 && (
-              <div className="text-text-subtle">Caveman/Ponytail off for all requests in this window.</div>
-            )}
+
+      {!anySavings ? (
+        <div className="px-5 py-6 text-center text-[13px] text-text-subtle">No token savers active in this window.</div>
+      ) : (
+        <>
+          <div className="border-b border-border-subtle px-5 py-5 text-center">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">Total saved this window</div>
+            <div className="mt-1 heading-gradient tnum text-[36px] font-bold tracking-tight">~{fmt.cost(totalSaved)}</div>
           </div>
-        </div>
+          <div className="divide-y divide-border-subtle">
+            <SaverRow
+              label="RTK"
+              cost={rtkCost}
+              active={(savings?.rtk.hits ?? 0) > 0}
+              detail={savings && savings.rtk.hits > 0 ? `${fmt.compact(savings.rtk.bytes_in - savings.rtk.bytes_out)} bytes trimmed (${rtkPct}%) · ${fmt.int(savings.rtk.hits)} req` : "no compressible tool output"}
+              estimated={false}
+            />
+            <SaverRow
+              label="Headroom"
+              cost={headroomCost}
+              active={(savings?.headroom.hits ?? 0) > 0}
+              detail={savings && savings.headroom.hits > 0 ? `${fmt.compact(savings.headroom.tokens_before - savings.headroom.tokens_after)} tokens trimmed (${headroomPct}%) · ${fmt.int(savings.headroom.hits)} req` : "not enabled, or no requests"}
+              estimated={false}
+            />
+            <SaverRow
+              label="Caveman"
+              cost={caveman.costSaved}
+              active={caveman.requests > 0}
+              detail={caveman.requests > 0 ? `${fmt.compact(caveman.tokensSaved)} output tokens vs "off" baseline · ${fmt.int(caveman.requests)} req` : "off for all requests, or no baseline to compare"}
+              estimated
+            />
+            <SaverRow
+              label="Ponytail"
+              cost={ponytail.costSaved}
+              active={ponytail.requests > 0}
+              detail={ponytail.requests > 0 ? `${fmt.compact(ponytail.tokensSaved)} output tokens vs "off" baseline · ${fmt.int(ponytail.requests)} req` : "off for all requests, or no baseline to compare"}
+              estimated
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SaverRow({
+  label,
+  cost,
+  active,
+  detail,
+  estimated,
+}: {
+  label: string;
+  cost: number;
+  active: boolean;
+  detail: string;
+  estimated: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between gap-3 px-5 py-3 ${active ? "" : "opacity-50"}`}>
+      <div className="min-w-0">
+        <div className="text-[13px] font-semibold text-text">{label}</div>
+        <div className="truncate text-[11px] text-text-subtle">{detail}</div>
+      </div>
+      <div className="flex-none text-right">
+        <span className="tnum text-[15px] font-bold text-accent">{active ? `~${fmt.cost(cost)}` : "—"}</span>
+        {active && estimated && <span className="ml-1 text-[10px] text-text-subtle" title="Estimated from avg output-token trend vs the &quot;off&quot; baseline in this window, not a per-request measurement like RTK/Headroom.">est.</span>}
       </div>
     </div>
   );
