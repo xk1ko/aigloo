@@ -91,10 +91,10 @@ Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and p
 - `ghcr.io/xk1ko/aigloo:{version}` + `:latest`
 - `xk1ko/aigloo:{version}` + `:latest`
 
-Note the image tag drops the `v` prefix (`docker pull xk1ko/aigloo:1.1.4`, not `:v1.1.4`) — that's `docker/metadata-action`'s `type=semver` behavior, same convention 9router uses.
+Note the image tag drops the `v` prefix (`docker pull xk1ko/aigloo:1.1.5`, not `:v1.1.5`) — that's `docker/metadata-action`'s `type=semver` behavior, same convention 9router uses.
 
 ```bash
-git tag v1.1.4 && git push origin v1.1.4
+git tag v1.1.5 && git push origin v1.1.5
 ```
 
 Requires repo secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` (a Docker Hub access token, not your account password) to be set under Settings → Secrets and variables → Actions.

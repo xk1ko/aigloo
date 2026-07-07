@@ -5,6 +5,20 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] — 2026-07-07
+
+### Added
+- **better-sqlite3 as the preferred SQLite driver** — falls back to the Node builtin `node:sqlite` when the native binding isn't available (no prebuilt binary, no build tools). Faster writes on the per-request usage-tracking hot path; which driver loaded is logged on startup
+- **Unified Token Saver Savings panel** — RTK, Headroom, Caveman, and Ponytail savings now show as one card with a combined "total saved" figure instead of four separate blocks
+
+### Fixed
+- **`node:sqlite` crashed on Node 22.5–22.12** — that range requires the `--experimental-sqlite` flag, which aigloo never passed; now injected automatically. Floor bumped from `>=22` to the true minimum, `>=22.5`
+- **Stuck on the login page after logging in** — client-side navigation could bounce back to `/login` after a successful login (or logout) until a hard refresh, because Next's Router Cache kept stale pre-auth redirects for pages visited earlier. Login/logout now do a full navigation instead
+- **Endpoint page savings text duplicated the Usage page** — removed; savings summary now lives only on Usage
+
+### Changed
+- **Settings page** — Backup card moved next to the raw-config editor it's related to, instead of sitting between two unrelated "Configure →" nav cards
+
 ## [1.1.4] — 2026-07-06
 
 ### Added

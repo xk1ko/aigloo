@@ -1,6 +1,6 @@
 {
   "name": "aigloo",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "type": "module",
   "description": "Self-hosted AI gateway. Route, translate and track requests across providers, with access keys, budgets, and a built-in dashboard.",
   "keywords": [
