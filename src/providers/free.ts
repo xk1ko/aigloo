@@ -27,9 +27,8 @@ export interface ModelFetchResult {
 export async function fetchModels(provider: Provider): Promise<ModelFetchResult> {
   const base = provider.base_url.replace(/\/$/, "");
   const headers: Record<string, string> = { ...(provider.headers ?? {}) };
-  // a free provider has no key; a keyed one still gets its bearer for /models.
   const key = provider.api_keys?.[0] ?? provider.api_key;
-  if (key && !provider.free) headers["authorization"] = `Bearer ${key}`;
+  if (key) headers["authorization"] = `Bearer ${key}`;
 
   try {
     const res = await request(`${base}/models`, {
