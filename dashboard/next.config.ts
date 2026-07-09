@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   allowedDevOrigins: ["localhost", "127.0.0.1"],
-  serverExternalPackages: ["undici", "yaml", "zod"],
+  serverExternalPackages: ["undici", "yaml", "zod", "sql.js"],
   // Ordinary page/asset responses (login, providers, budgets…) previously shipped
   // with none of these — only the hand-built /admin, /v1, /api/gw route handlers
   // set them (see dashboard/src/lib/http.ts). next.config.ts runs in a config-time

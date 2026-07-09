@@ -5,6 +5,15 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] — 2026-07-08
+
+### Added
+- **sql.js as a fallback SQLite driver** — pure WASM-compiled SQLite, always installable with no native build step. Driver chain is now: better-sqlite3 (native, fastest) → node:sqlite (built-in Node ≥22.5) → sql.js (WASM, guaranteed). If the native drivers are unavailable, usage tracking still works
+- **`cost_out` tracking** — output-only cost (tokens_out + reasoning_tokens priced at their respective rates) now recorded per request and summed in the usage summary. Caveman/Ponytail savings estimates use this output-only rate instead of the previous blended in+out rate, which understated savings when output tokens are more expensive than input tokens
+
+### Fixed
+- **npm `allow-scripts` warning on global install** — `better-sqlite3` removed from `optionalDependencies` entirely. The CLI installs it at runtime to `~/.aigloo/runtime/` (first run only, cached after), so `npm install -g aigloo` no longer triggers native build scripts. Falls back to node:sqlite or sql.js if the runtime install fails (no build tools / no network)
+
 ## [1.1.6] — 2026-07-08
 
 ### Added
