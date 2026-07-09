@@ -28,7 +28,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   jar.set(SESSION_COOKIE, sealSession(g.auth.version), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: req.headers.get("x-forwarded-proto") === "https",
     path: "/",
     maxAge: 60 * 60 * 12,
   });

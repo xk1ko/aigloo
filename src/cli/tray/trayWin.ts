@@ -29,6 +29,7 @@ $ni = New-Object System.Windows.Forms.NotifyIcon
 $ni.Icon = New-Object System.Drawing.Icon($ms)
 $ni.Visible = $true
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
+$ni.ContextMenuStrip = $menu
 $items = @()
 
 function Write-Event($obj) {
