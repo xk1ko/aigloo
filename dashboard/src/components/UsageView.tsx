@@ -145,25 +145,38 @@ export function UsageView() {
 }
 
 /**
- * Caveman/ponytail bias model *output length*, not a single request's
- * before/after — there's no per-request counterfactual like RTK/Headroom
- * have. Estimate savings by comparing each active level's avg output
- * tokens against the "off" baseline avg in the same window, times the
- * output-only $/token rate (total window cost_out ÷ total window
- * tokens_out). This is a population-level estimate, not a measurement — callers must label it
- * "est." and never merge it silently with RTK/Headroom's real cost_saved
+ * Caveman/ponytail bias model *output length* — the model produces fewer
+ * tokens than it would without the terseness instruction. There's no
+ * per-request counterfactual (we can't run the model twice), so we estimate
+ * using empirical reduction percentages observed by the caveman/ponytail
+ * projects (see their GitHub repos). Applied to actual output tokens at the
+ * window's output-only $/token rate.
+ *
+ * This is a population-level estimate, not a measurement — callers must label
+ * it "est." and never merge it silently with RTK/Headroom's real cost_saved
  * without that label.
  */
+const LEVEL_REDUCTION: Record<string, number> = {
+  off: 0,
+  lite: 0.15,
+  full: 0.30,
+  ultra: 0.45,
+};
+
 function estimateLevelSavings(
   rows: SavingsSummary["by_caveman_level"],
   outRatePerToken: number,
 ): { tokensSaved: number; costSaved: number; requests: number } {
-  const offAvg = rows.find((r) => r.level === "off")?.avg_tokens_out ?? 0;
   let tokensSaved = 0;
   let requests = 0;
   for (const r of rows) {
-    if (r.level === "off" || r.requests === 0) continue;
-    tokensSaved += Math.max(0, offAvg - r.avg_tokens_out) * r.requests;
+    if (r.requests === 0) continue;
+    const pct = LEVEL_REDUCTION[r.level] ?? 0;
+    if (pct === 0) continue;
+    // avg_tokens_out is the actual (reduced) output; the model would have
+    // produced avg / (1 - pct) without the saver, so saved = that - avg.
+    const wouldHave = r.avg_tokens_out / (1 - pct);
+    tokensSaved += (wouldHave - r.avg_tokens_out) * r.requests;
     requests += r.requests;
   }
   return { tokensSaved, costSaved: tokensSaved * outRatePerToken, requests };
@@ -229,14 +242,14 @@ function SavingsPanel({
               label="Caveman"
               cost={caveman.costSaved}
               active={caveman.requests > 0}
-              detail={caveman.requests > 0 ? `${fmt.compact(caveman.tokensSaved)} output tokens vs "off" baseline · ${fmt.int(caveman.requests)} req` : "off for all requests, or no baseline to compare"}
+              detail={caveman.requests > 0 ? `~${fmt.compact(caveman.tokensSaved)} output tokens est. saved · ${fmt.int(caveman.requests)} req` : "off for all requests in this window"}
               estimated
             />
             <SaverRow
               label="Ponytail"
               cost={ponytail.costSaved}
               active={ponytail.requests > 0}
-              detail={ponytail.requests > 0 ? `${fmt.compact(ponytail.tokensSaved)} output tokens vs "off" baseline · ${fmt.int(ponytail.requests)} req` : "off for all requests, or no baseline to compare"}
+              detail={ponytail.requests > 0 ? `~${fmt.compact(ponytail.tokensSaved)} output tokens est. saved · ${fmt.int(ponytail.requests)} req` : "off for all requests in this window"}
               estimated
             />
           </div>
