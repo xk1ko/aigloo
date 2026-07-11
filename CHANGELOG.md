@@ -5,10 +5,15 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.16] — 2026-07-12
+
+### Fixed
+- **Packaging: ship standalone deps as `node_modules`** — root cause of the missing-`next` crash was unanchored `node_modules/` in `dashboard/.npmignore` (and root `.gitignore`), which stripped `dashboard/.next/standalone/node_modules` from the npm tarball. Anchored ignores to `/node_modules` only. Dropped the `vendor` rename workaround; `prepare-standalone.mjs` still copies static assets, migrates any legacy `vendor/` → `node_modules`, and fails if `node_modules/next` is missing. `NODE_PATH` prefers `node_modules`, falls back to legacy `vendor`.
+
 ## [1.1.15] — 2026-07-12
 
 ### Fixed
-- **Dashboard never starts after npm install (`Cannot find module 'next'`)** — v1.1.14 removed the `standalone/node_modules` → `vendor` rename under the wrong assumption that npm only strips root-level `node_modules`. npm omits **every** directory named `node_modules` from the tarball, so the published package shipped `server.js` without traced deps. Restored the rename (Linux/macOS/Windows), dual-path `NODE_PATH` (`vendor` or local `node_modules`), and a hard fail in `scripts/prepare-standalone.mjs` if `vendor/next` is missing. Windows `createRequire` / `process.argv[1]` fixes from 1.1.12–1.1.13 stay intact.
+- **Dashboard never starts after npm install (`Cannot find module 'next'`)** — v1.1.14 removed the `standalone/node_modules` → `vendor` rename; published packages lost traced deps. Restored rename + pack gate as an interim fix (superseded by 1.1.16 ignore-rule fix).
 
 ## [1.1.14] — 2026-07-12
 

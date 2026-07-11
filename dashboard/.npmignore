@@ -1,4 +1,7 @@
-node_modules/
+# Anchored: only this package's install dir. Unanchored `node_modules/` was
+# matching dashboard/.next/standalone/node_modules and stripping traced Next
+# deps from the published aigloo tarball (Cannot find module 'next').
+/node_modules
 .next/dev/
 .env.local
 *.tsbuildinfo

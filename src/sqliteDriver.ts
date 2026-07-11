@@ -33,9 +33,9 @@ interface OpenSqliteOptions {
 // process.argv[1] = absolute path to standalone server.js at runtime.
 // Prefer that over import.meta.url: webpack hardcodes import.meta.url to the
 // *build machine* path (often Linux), which createRequire rejects on Windows
-// (ERR_INVALID_ARG_VALUE — no drive letter). Deps live in sibling
-// vendor/ (published) or node_modules/ (local build); cli.ts puts that dir on
-// NODE_PATH so require('sql.js') / better-sqlite3 resolve on all platforms.
+// (ERR_INVALID_ARG_VALUE — no drive letter). Traced deps live in sibling
+// node_modules/ (or legacy vendor/); cli.ts puts that dir on NODE_PATH so
+// require('sql.js') / better-sqlite3 resolve on all platforms.
 let _req: ((id: string) => unknown) | null = null;
 
 export function getRequire(): (id: string) => unknown {
