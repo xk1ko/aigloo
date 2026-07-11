@@ -31,6 +31,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dashboardDir = join(root, "dashboard");
 const pkgVersion = (() => { try { return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ?? "0.0.0"; } catch { return "0.0.0"; } })();
 
+const MAX_RESTARTS = 2;
+const CRASH_LOG_LINES = 50;
+let crashLog: string[] = [];
+let serverStartTime = 0;
+let restartCount = 0;
+
 // ── CLI flags (aigloo-style): -p/--port, -n/--no-browser, -y/--yes, -h/--help ──
 interface CliOpts {
   port?: number;
@@ -159,8 +165,20 @@ function shutdown(): void {
   for (const c of children) killTree(c);
 }
 
-/** The pid listening on a TCP port, or null. Best-effort, POSIX-only. */
 function pidOnPort(port: number): number | null {
+  if (process.platform === "win32") {
+    try {
+      const out = execSync(`netstat -ano | findstr :${port}`, {
+        encoding: "utf8", windowsHide: true, timeout: 5000,
+      });
+      const line = out.split("\n").find((l) => l.includes("LISTENING"));
+      if (line) {
+        const pid = line.trim().split(/\s+/).pop();
+        if (pid && /^\d+$/.test(pid)) return Number(pid);
+      }
+    } catch { /* port free */ }
+    return null;
+  }
   for (const probe of [
     `ss -ltnHp 'sport = :${port}' 2>/dev/null`,
     `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`,
@@ -174,6 +192,53 @@ function pidOnPort(port: number): number | null {
     }
   }
   return null;
+}
+
+/**
+ * Kill all stale aigloo processes (launcher + dashboard) by matching the
+ * install root path in the command line. More thorough than port-based kill —
+ * catches zombies not holding the port but still locking files/sqlite handles.
+ * Never matches other apps (9router, etc.) — filter is the exact aigloo path.
+ */
+function killAllAppProcesses(): void {
+  const rootLower = root.toLowerCase();
+  const isOurs = (cmd: string) => cmd.includes(rootLower);
+  const pids: number[] = [];
+  const ownPid = process.pid;
+
+  if (process.platform === "win32") {
+    try {
+      const out = execSync(
+        `powershell -NoProfile -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`,
+        { encoding: "utf8", windowsHide: true, timeout: 5000 },
+      );
+      for (const line of out.split("\n").slice(1).filter((l) => l.trim())) {
+        if (isOurs(line.toLowerCase())) {
+          const m = line.match(/^"(\d+)"/);
+          if (m && Number(m[1]) !== ownPid) pids.push(Number(m[1]));
+        }
+      }
+    } catch { /* none found */ }
+    for (const pid of pids) {
+      try { execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {}
+    }
+  } else {
+    try {
+      const out = execSync("ps -eo pid,command", { encoding: "utf8", timeout: 5000 });
+      for (const line of out.split("\n")) {
+        if (isOurs(line.toLowerCase())) {
+          const m = line.trim().match(/^(\d+)/);
+          if (m && Number(m[1]) !== ownPid) pids.push(Number(m[1]));
+        }
+      }
+    } catch { /* none found */ }
+    for (const pid of pids) {
+      try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+  }
+  if (pids.length) {
+    console.log(`  killed ${pids.length} stale aigloo process(es).`);
+  }
 }
 
 /**
@@ -290,7 +355,7 @@ function spawnDashboard(): ChildProcess {
       .filter(Boolean).join(delimiter);
     return spawn("node", [standaloneServer], {
       cwd: standaloneDir,
-      stdio: "inherit",
+      stdio: ["ignore", "inherit", "pipe"],
       detached: true,
       env: { ...env, NODE_PATH: nodePath },
     });
@@ -301,7 +366,7 @@ function spawnDashboard(): ChildProcess {
   const nodePath = [runtimeNodeModules, process.env.NODE_PATH].filter(Boolean).join(delimiter);
   return spawn("npm", args, {
     cwd: dashboardDir,
-    stdio: "inherit",
+    stdio: ["ignore", "inherit", "pipe"],
     detached: true,
     env: { ...env, NODE_PATH: nodePath },
   });
@@ -479,21 +544,72 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  killAllAppProcesses();
   await ensurePortFree(GATEWAY_PORT, "AIGLOO_PORT");
 
-  const dash = spawnDashboard();
+  let dash = spawnDashboard();
+  serverStartTime = Date.now();
   children.push(dash);
-  dash.on("exit", (code) => {
-    console.error(`\n  aigloo exited (${code}).`);
-    shutdown();
-    process.exit(code ?? 1);
-  });
+
+  let isShuttingDown = false;
+
+  function attachCrashHandlers(): void {
+    if (dash.stderr) {
+      dash.stderr.on("data", (data: Buffer) => {
+        const lines = data.toString().split("\n").filter(Boolean);
+        crashLog.push(...lines);
+        if (crashLog.length > CRASH_LOG_LINES) crashLog = crashLog.slice(-CRASH_LOG_LINES);
+        process.stderr.write(data);
+      });
+    }
+    dash.on("exit", (code) => {
+      if (isShuttingDown || code === 0) {
+        process.exit(code ?? 0);
+        return;
+      }
+      const aliveMs = Date.now() - serverStartTime;
+      if (aliveMs >= 30000) restartCount = 0;
+      if (restartCount >= MAX_RESTARTS) {
+        console.error(`\n  aigloo crashed ${MAX_RESTARTS} times — giving up.`);
+        if (crashLog.length) {
+          console.error("\n  --- crash log ---");
+          crashLog.forEach((l) => console.error(`  ${l}`));
+          console.error("  --- end crash log ---\n");
+        }
+        shutdown();
+        process.exit(code ?? 1);
+      }
+      restartCount++;
+      const delay = Math.min(1000 * restartCount, 5000);
+      console.error(`\n  aigloo exited (code ${code}) — restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
+      if (crashLog.length) {
+        console.error("\n  --- crash log ---");
+        crashLog.forEach((l) => console.error(`  ${l}`));
+        console.error("  --- end crash log ---\n");
+      }
+      crashLog = [];
+      setTimeout(() => {
+        dash = spawnDashboard();
+        serverStartTime = Date.now();
+        children.length = 0;
+        children.push(dash);
+        attachCrashHandlers();
+      }, delay);
+    });
+  }
+  attachCrashHandlers();
 
   const appUrl = `http://localhost:${GATEWAY_PORT}`;
   const ready = await waitForGateway(`http://127.0.0.1:${GATEWAY_PORT}/health`, 30000, (s) => s > 0 && s < 500);
   if (!ready) {
     console.error(`\n  aigloo failed to start — dashboard did not respond within 30s.`);
+    if (crashLog.length) {
+      console.error("\n  --- crash log ---");
+      crashLog.forEach((l) => console.error(`  ${l}`));
+      console.error("  --- end crash log ---\n");
+    }
     console.error(`  check if port ${GATEWAY_PORT} is free, or set AIGLOO_PORT to a different port.`);
+    isShuttingDown = true;
     shutdown();
     process.exit(1);
   }
@@ -504,7 +620,7 @@ async function main(): Promise<void> {
   }
   if (mode === "tray") {
     ensureTrayRuntime({ silent: false });
-    const started = initTray({ dashboardUrl: appUrl, port: GATEWAY_PORT, onQuit: shutdown });
+    const started = initTray({ dashboardUrl: appUrl, port: GATEWAY_PORT, onQuit: () => { isShuttingDown = true; shutdown(); } });
     console.log(
       started
         ? "\n  running in the system tray — right-click the icon for Open Dashboard / Quit.\n"
