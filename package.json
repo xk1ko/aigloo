@@ -1,6 +1,6 @@
 {
   "name": "aigloo",
-  "version": "1.1.10",
+  "version": "1.1.14",
   "type": "module",
   "description": "Self-hosted AI gateway. Route, translate and track requests across providers, with access keys, budgets, and a built-in dashboard.",
   "keywords": [
@@ -34,7 +34,6 @@
     "dist",
     "dashboard/.next/standalone",
     "dashboard/package.json",
-    "dashboard/.env.example",
     "assets",
     "config.example.yaml",
     "run.sh",
@@ -51,7 +50,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build && npm --prefix dashboard run build && node -e \"const{renameSync,existsSync,cpSync}=require('fs');const p='dashboard/.next/standalone/node_modules';if(existsSync(p))renameSync(p,'dashboard/.next/standalone/vendor');cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})\""
+    "prepublishOnly": "npm run build && npm --prefix dashboard run build && node -e \"const fs=require('fs'),p=require('path');fs.cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true});fs.rmSync('dashboard/.next/standalone/src',{recursive:true,force:true});(function rm(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const f=p.join(dir,e.name);if(e.isDirectory())rm(f);else if(e.name.endsWith('.map')||e.name.endsWith('.d.ts'))fs.rmSync(f)}})('dist')\""
   },
   "publishConfig": {
     "access": "public"

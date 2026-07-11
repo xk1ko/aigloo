@@ -29,6 +29,22 @@ interface OpenSqliteOptions {
   sqlJsModule?: unknown;
 }
 
+// ── require helper ───────────────────────────────────────────────
+// process.argv[1] = server.js in standalone — node_modules sits right
+// next to it, so require() resolves naturally. Falls back to
+// import.meta.url for dev/test (webpack hardcodes it in standalone).
+let _req: ((id: string) => unknown) | null = null;
+
+export function getRequire(): (id: string) => unknown {
+  if (_req) return _req;
+  try {
+    _req = createRequire(process.argv[1] || import.meta.url);
+  } catch {
+    _req = createRequire(import.meta.url);
+  }
+  return _req;
+}
+
 // ── sql.js pre-init ──────────────────────────────────────────────
 // sql.js loads its WASM binary asynchronously. We pre-init it once
 // (called via top-level await in the dashboard's gw.ts) so that
@@ -41,13 +57,12 @@ export async function preInitSqlJs(): Promise<void> {
   if (sqlJsInitAttempted) return;
   sqlJsInitAttempted = true;
   try {
-    const req = createRequire(import.meta.url);
-    const mod = req("sql.js");
+    const req = getRequire();
+    const mod = req("sql.js") as any;
     const initSqlJs = mod.default ?? mod;
     sqlJsModule = await initSqlJs();
-  } catch {
-    // sql.js not installed or WASM load failed — openSqliteDatabase
-    // will throw if it reaches the sql.js fallback.
+  } catch (e) {
+    console.error("[sql.js] preInit FAILED:", (e as Error)?.message ?? e);
   }
 }
 
@@ -198,40 +213,38 @@ class SqlJsDatabaseAdapter implements DatabaseSyncLike {
  * absent, falls through silently to node:sqlite, then sql.js.
  */
 export function openSqliteDatabase(path: string, opts: OpenSqliteOptions = {}): OpenSqliteResult {
-  const req = opts.requireFn ?? createRequire(import.meta.url);
+  const req = opts.requireFn ?? getRequire();
+  const errors: string[] = [];
 
-  // 1. better-sqlite3
   if (opts.forceDriver !== "node:sqlite" && opts.forceDriver !== "sql.js") {
     let Better: (new (path: string) => DatabaseSyncLike) | undefined;
     try {
       Better = req("better-sqlite3") as new (path: string) => DatabaseSyncLike;
     } catch (e) {
+      errors.push(`better-sqlite3: ${(e as Error)?.message ?? e}`);
       if (opts.forceDriver === "better-sqlite3") throw e;
-      // not installed — fall through to next driver.
     }
     if (Better) {
       return { db: new Better(path), driver: "better-sqlite3" };
     }
   }
 
-  // 2. node:sqlite (built-in, always available on Node ≥22.5)
   if (opts.forceDriver !== "better-sqlite3" && opts.forceDriver !== "sql.js") {
     try {
       const { DatabaseSync } = req("node:sqlite") as { DatabaseSync: new (path: string) => DatabaseSyncLike };
       return { db: new DatabaseSync(path), driver: "node:sqlite" };
     } catch (e) {
+      errors.push(`node:sqlite: ${(e as Error)?.message ?? e}`);
       if (opts.forceDriver === "node:sqlite") throw e;
-      // node:sqlite unavailable — fall through to sql.js.
     }
   }
 
-  // 3. sql.js (WASM, always installable, last resort)
   const SQL = opts.sqlJsModule ?? sqlJsModule;
   if (SQL) {
     return { db: new SqlJsDatabaseAdapter(path, SQL), driver: "sql.js" };
   }
 
   throw new Error(
-    "[DB] No SQLite driver available (better-sqlite3 + node:sqlite + sql.js all failed)",
+    `[DB] No SQLite driver available. [${errors.join("; ")}]; sql.js module: ${sqlJsModule ? "loaded" : "null"}`,
   );
 }

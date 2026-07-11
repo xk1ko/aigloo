@@ -18,20 +18,16 @@ COPY . .
 RUN npm run build
 RUN npm run build --prefix dashboard
 
-# Next's standalone output ships its own traced node_modules; cli.ts expects it
-# renamed to vendor/ (NODE_PATH) and .next/static copied alongside server.js —
-# same fixup prepublishOnly does for npm publishes. Using cpSync+rmSync instead
-# of renameSync here (unlike prepublishOnly, which runs on a normal host FS):
-# BuildKit's layered/overlay filesystem can put the source and dest on
-# different devices, and a plain rename fails with EXDEV in that case.
-RUN node -e "const{cpSync,rmSync,existsSync}=require('fs');const p='dashboard/.next/standalone/node_modules';if(existsSync(p)){cpSync(p,'dashboard/.next/standalone/vendor',{recursive:true});rmSync(p,{recursive:true,force:true});}cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})"
+# Next's standalone output ships its own traced node_modules; cli.ts expects
+# .next/static copied alongside server.js — same fixup prepublishOnly does.
+RUN node -e "const{cpSync}=require('fs');cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})"
 
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
 # root deps for dist/cli.js (undici, yaml, zod) — the standalone dashboard build
-# carries its own vendored deps separately, this is just the launcher's.
+# carries its own node_modules separately, this is just the launcher's.
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
@@ -50,8 +46,8 @@ VOLUME /data
 EXPOSE 18080
 
 # su-exec drops from root to the built-in `node` user after the entrypoint
-# chowns the (possibly root-owned, freshly-mounted) volume — same pattern as
-# 9router's Dockerfile. node:22-alpine already has a `node` user (uid 1000).
+# chowns the (possibly root-owned, freshly-mounted) volume. node:22-alpine
+# already has a `node` user (uid 1000).
 RUN apk add --no-cache su-exec && \
   mkdir -p /data && chown -R node:node /app /data && \
   chmod +x /docker-entrypoint.sh

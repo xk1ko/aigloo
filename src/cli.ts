@@ -198,7 +198,7 @@ function pidOnPort(port: number): number | null {
  * Kill all stale aigloo processes (launcher + dashboard) by matching the
  * install root path in the command line. More thorough than port-based kill —
  * catches zombies not holding the port but still locking files/sqlite handles.
- * Never matches other apps (9router, etc.) — filter is the exact aigloo path.
+ * Never matches other apps — filter is the exact aigloo path.
  */
 function killAllAppProcesses(): void {
   const rootLower = root.toLowerCase();
@@ -368,7 +368,7 @@ function spawnDashboard(): ChildProcess {
   ];
 
   if (existsSync(standaloneServer)) {
-    const nodePath = [join(standaloneDir, "vendor"), runtimeNodeModules, process.env.NODE_PATH]
+    const nodePath = [join(standaloneDir, "node_modules"), runtimeNodeModules, process.env.NODE_PATH]
       .filter(Boolean).join(delimiter);
     return spawn("node", [...nodeFlags, standaloneServer], {
       cwd: standaloneDir,
@@ -661,8 +661,7 @@ async function main(): Promise<void> {
 
   // Tray mode: init the tray icon BEFORE waiting for the dashboard so the
   // user always has a visible icon + a way to quit, even if the server
-  // crashes on boot. 9router inits tray after server-ready, but that means
-  // no tray if the server fails — we do better.
+  // crashes on boot.
   let trayInited = false;
   if (mode === "tray") {
     ensureTrayRuntime({ silent: false });

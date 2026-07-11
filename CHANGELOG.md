@@ -5,6 +5,32 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.14] — 2026-07-12
+
+### Fixed
+- **Windows: SQLite resolution broken by `node_modules` → `vendor` rename** — npm does NOT strip nested `node_modules` (only root-level). The rename was based on a wrong assumption. Renaming broke `createRequire` resolution on Windows because webpack hardcodes `import.meta.url` to the build machine's Linux path. Removed the rename entirely — `node_modules` stays `node_modules`, Node's native resolution works on all platforms. Updated NODE_PATH, Dockerfile, and `getRequire()` accordingly.
+
+## [1.1.13] — 2026-07-12
+
+### Fixed
+- **getRequire() now uses process.argv[1] as primary** — import.meta.url is ALWAYS hardcoded by webpack in standalone builds, not just on Windows. Previous try-first-then-fallback was fragile.
+- Added `node:sqlite` to `serverExternalPackages` — prevents webpack from trying to bundle the built-in module
+
+### Added
+- `/api/debug` diagnostic endpoint — shows driver resolution details, import.meta.url, NODE_PATH, and per-driver errors
+- Detailed error message in `openSqliteDatabase` — now shows which drivers failed and why, instead of generic "all failed"
+
+## [1.1.12] — 2026-07-12
+
+### Fixed
+- **Windows: login failed (createRequire crash)** — webpack hardcodes `import.meta.url` to the build machine's Linux path (e.g. `file:///home/.../sqliteDriver.js`). On Windows, `createRequire()` rejects that URL (no drive letter → `ERR_INVALID_ARG_VALUE`), so every API route returned 500 → login showed "login failed". Now falls back to `process.argv[1]` (the standalone server's absolute path) when `import.meta.url` is invalid
+
+## [1.1.11] — 2026-07-12
+
+### Fixed
+- **Windows: login failed (500 from gateway init)** — `sql.js` (WASM SQLite fallback) was not included in the dashboard standalone build. When better-sqlite3 wasn't installed and node:sqlite was unavailable, all three SQLite drivers failed → `gw()` threw → every API route returned 500 → login showed "login failed" instead of "wrong password". Now `sql.js` is traced into the standalone output via `outputFileTracingIncludes` and listed as a dashboard dependency
+- **Windows: tray icon not showing** — PowerShell tray script was passed via `-Command` (inline, fragile). Now writes `.ps1` + `.ico` files to disk and invokes via `-File` (reliable). Added DPI awareness for crisp icon rendering on high-DPI displays
+
 ## [1.1.10] — 2026-07-12
 
 ### Fixed
@@ -25,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Windows: dashboard crashed if install path contained spaces** — `--require` and `--experimental-sqlite` were passed via `NODE_OPTIONS` (a space-separated string). If the aigloo install path had spaces (e.g., `C:\Program Files\nodejs\...`), Node split the path on the space and couldn't find the preload module → dashboard crashed instantly → auto-restart loop. Now passed as direct spawn args, which handle spaces correctly
-- **Tray icon disappeared after dashboard crashes** — auto-restart gave up after 2 crashes, called `shutdown()` (killed tray) and `process.exit()`. Now resets the crash counter and retries indefinitely (5s backoff), keeping the tray alive. Mirrors 9router's approach
+- **Tray icon disappeared after dashboard crashes** — auto-restart gave up after 2 crashes, called `shutdown()` (killed tray) and `process.exit()`. Now resets the crash counter and retries indefinitely (5s backoff), keeping the tray alive
 - **Login page stuck on "Connecting…" forever** — if the server crashed after a failed login, the second `fetch` hung indefinitely with no timeout. Now uses `AbortController` (15s timeout) + `try/catch/finally` so the button always resets. Network errors show "server not responding — aigloo may have crashed" instead of silent hang
 - **`taskkill /F /PID` missing `/T` flag on Windows** — orphaned child processes (next-server) survived parent kill, holding the port. Now uses `taskkill /F /T /PID` for tree kill
 - **Console window flashed on Windows** — `spawn` calls missing `windowsHide: true`. Added to `spawnDashboard` and `hideToTray`
@@ -33,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.8] — 2026-07-11
 
 ### Added
-- **Stale process cleanup** — on startup, all lingering aigloo processes (launcher + dashboard) are killed by matching the install root path in the command line. Catches zombies not holding the port but locking files or SQLite handles. Never matches other apps (9router, etc.) — filter is the exact aigloo path, not the app name
+- **Stale process cleanup** — on startup, all lingering aigloo processes (launcher + dashboard) are killed by matching the install root path in the command line. Catches zombies not holding the port but locking files or SQLite handles. Never matches other apps — filter is the exact aigloo path, not the app name
 - **Crash logging** — dashboard stderr is captured (last 50 lines) and printed on crash or startup timeout, so the user can see why the dashboard failed instead of a silent exit
 - **Auto-restart** — if the dashboard crashes, aigloo restarts it up to 2 times with 1–5s backoff. The counter resets after 30s of stable uptime. After max restarts, the crash log is printed and the process exits
 
