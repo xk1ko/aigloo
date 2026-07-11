@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 320" width="970" height="320">
-  <rect width="970" height="320" rx="48" fill="#0f0f0e"/>
-  <g transform="translate(60, 34) scale(9)" fill="none" stroke="#cbe85a" stroke-linecap="round">
-    <path d="M4 20C4 12.268 8.477 6 14 6C19.523 6 24 12.268 24 20" stroke-width="2"/>
-    <path d="M8 20C8 14.477 10.686 10 14 10C17.314 10 20 14.477 20 20" stroke-width="1.5" opacity="0.5"/>
-    <line x1="3" y1="20" x2="25" y2="20" stroke-width="2"/>
-  </g>
-  <text x="370" y="222" font-family="ui-sans-serif, Inter, Arial, sans-serif" font-size="200" font-weight="800" letter-spacing="-8" text-anchor="start" fill="#f2f2ec">aigloo</text>
-</svg>

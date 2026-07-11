@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/wordmark.svg" width="420" alt="aigloo">
+  <img src="./assets/wordmark.png" width="420" alt="aigloo">
 </p>
 
 <p align="center">
