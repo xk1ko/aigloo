@@ -183,7 +183,14 @@ function pidOnPort(port: number): number | null {
  * something unrelated is left alone and surfaced as a clear error.
  */
 async function ensurePortFree(port: number, envVar: string): Promise<void> {
-  if (process.platform === "win32") return;
+  if (process.platform === "win32") {
+    const pid = pidOnPort(port);
+    if (!pid) return;
+    console.log(`  port ${port} held by stale process (pid ${pid}) — killing it.`);
+    try { execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" }); } catch {}
+    await new Promise((r) => setTimeout(r, 500));
+    return;
+  }
   const pid = pidOnPort(port);
   if (!pid) return;
 
@@ -483,7 +490,13 @@ async function main(): Promise<void> {
   });
 
   const appUrl = `http://localhost:${GATEWAY_PORT}`;
-  await waitForGateway(`http://127.0.0.1:${GATEWAY_PORT}/health`, 30000, (s) => s > 0 && s < 500);
+  const ready = await waitForGateway(`http://127.0.0.1:${GATEWAY_PORT}/health`, 30000, (s) => s > 0 && s < 500);
+  if (!ready) {
+    console.error(`\n  aigloo failed to start — dashboard did not respond within 30s.`);
+    console.error(`  check if port ${GATEWAY_PORT} is free, or set AIGLOO_PORT to a different port.`);
+    shutdown();
+    process.exit(1);
+  }
   console.log(`\n  aigloo   ${appUrl}`);
   if (generatedPw) {
     console.log(`\n  admin password (generated): ${adminPassword}`);
