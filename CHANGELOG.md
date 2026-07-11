@@ -5,6 +5,15 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.9] — 2026-07-12
+
+### Fixed
+- **Windows: dashboard crashed if install path contained spaces** — `--require` and `--experimental-sqlite` were passed via `NODE_OPTIONS` (a space-separated string). If the aigloo install path had spaces (e.g., `C:\Program Files\nodejs\...`), Node split the path on the space and couldn't find the preload module → dashboard crashed instantly → auto-restart loop. Now passed as direct spawn args, which handle spaces correctly
+- **Tray icon disappeared after dashboard crashes** — auto-restart gave up after 2 crashes, called `shutdown()` (killed tray) and `process.exit()`. Now resets the crash counter and retries indefinitely (5s backoff), keeping the tray alive. Mirrors 9router's approach
+- **Login page stuck on "Connecting…" forever** — if the server crashed after a failed login, the second `fetch` hung indefinitely with no timeout. Now uses `AbortController` (15s timeout) + `try/catch/finally` so the button always resets. Network errors show "server not responding — aigloo may have crashed" instead of silent hang
+- **`taskkill /F /PID` missing `/T` flag on Windows** — orphaned child processes (next-server) survived parent kill, holding the port. Now uses `taskkill /F /T /PID` for tree kill
+- **Console window flashed on Windows** — `spawn` calls missing `windowsHide: true`. Added to `spawnDashboard` and `hideToTray`
+
 ## [1.1.8] — 2026-07-11
 
 ### Added
