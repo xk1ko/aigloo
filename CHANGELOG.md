@@ -5,6 +5,21 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] — 2026-07-11
+
+### Added
+- **Stale process cleanup** — on startup, all lingering aigloo processes (launcher + dashboard) are killed by matching the install root path in the command line. Catches zombies not holding the port but locking files or SQLite handles. Never matches other apps (9router, etc.) — filter is the exact aigloo path, not the app name
+- **Crash logging** — dashboard stderr is captured (last 50 lines) and printed on crash or startup timeout, so the user can see why the dashboard failed instead of a silent exit
+- **Auto-restart** — if the dashboard crashes, aigloo restarts it up to 2 times with 1–5s backoff. The counter resets after 30s of stable uptime. After max restarts, the crash log is printed and the process exits
+
+### Fixed
+- **Windows: dashboard infinite loading** — `ensurePortFree` was a no-op on Windows (`if (process.platform === "win32") return`). Stale processes held port 18080, the new dashboard crashed with EADDRINUSE silently, and the tray showed anyway — clicking Open Dashboard connected to a zombie process → infinite loading. Now uses `netstat -ano` + `taskkill /F` on Windows
+- **Windows: tray right-click did nothing** — the PowerShell `ContextMenuStrip` was created but never assigned to the `NotifyIcon` (`$ni.ContextMenuStrip = $menu` was missing). Right-click on the tray icon now opens the menu
+- **Windows: login with default password `123456` failed** — the session cookie was set with `secure: true` in production mode (standalone build), but the dashboard is served over HTTP on localhost. Browsers refused to set the cookie, so every login appeared to fail. Now `secure` is only set when behind HTTPS (`x-forwarded-proto: https`)
+- **Caveman/Ponytail savings estimate always showed $0** — the estimate compared average output tokens of active vs "off" baseline within the same window. If the user always had caveman/ponytail on (typical), there were no "off" rows → savings = $0. Now uses empirical reduction percentages per level (lite 15%, full 30%, ultra 45%) applied to actual output tokens — always shows savings when the saver is active
+- **Wordmark logo broken on Windows** — the SVG used `font-family="ui-sans-serif, Inter, Arial"` which Windows doesn't have, causing Arial fallback with different metrics → text overlapping the icon. Replaced with a pre-rendered PNG for cross-OS consistency
+- **`waitForGateway` timeout was silently ignored** — if the dashboard didn't respond within 30s, the tray was shown anyway, leading to infinite loading. Now exits with an error message and crash log
+
 ## [1.1.7] — 2026-07-08
 
 ### Added
