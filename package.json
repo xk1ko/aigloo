@@ -1,6 +1,6 @@
 {
   "name": "aigloo",
-  "version": "1.1.14",
+  "version": "1.1.15",
   "type": "module",
   "description": "Self-hosted AI gateway. Route, translate and track requests across providers, with access keys, budgets, and a built-in dashboard.",
   "keywords": [
@@ -50,7 +50,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build && npm --prefix dashboard run build && node -e \"const fs=require('fs'),p=require('path');fs.cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true});fs.rmSync('dashboard/.next/standalone/src',{recursive:true,force:true});(function rm(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const f=p.join(dir,e.name);if(e.isDirectory())rm(f);else if(e.name.endsWith('.map')||e.name.endsWith('.d.ts'))fs.rmSync(f)}})('dist')\""
+    "prepublishOnly": "npm run build && npm --prefix dashboard run build && node scripts/prepare-standalone.mjs",
+    "prepare-standalone": "node scripts/prepare-standalone.mjs"
   },
   "publishConfig": {
     "access": "public"

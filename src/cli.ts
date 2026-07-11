@@ -368,7 +368,13 @@ function spawnDashboard(): ChildProcess {
   ];
 
   if (existsSync(standaloneServer)) {
-    const nodePath = [join(standaloneDir, "node_modules"), runtimeNodeModules, process.env.NODE_PATH]
+    // Published packages rename standalone/node_modules → vendor so npm pack
+    // ships the traced deps (npm always strips any dir named node_modules).
+    // Local `next build` still leaves node_modules in place — accept either.
+    const vendorDir = join(standaloneDir, "vendor");
+    const nmDir = join(standaloneDir, "node_modules");
+    const standaloneDeps = existsSync(vendorDir) ? vendorDir : nmDir;
+    const nodePath = [standaloneDeps, runtimeNodeModules, process.env.NODE_PATH]
       .filter(Boolean).join(delimiter);
     return spawn("node", [...nodeFlags, standaloneServer], {
       cwd: standaloneDir,

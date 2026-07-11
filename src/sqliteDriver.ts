@@ -30,9 +30,12 @@ interface OpenSqliteOptions {
 }
 
 // ── require helper ───────────────────────────────────────────────
-// process.argv[1] = server.js in standalone — node_modules sits right
-// next to it, so require() resolves naturally. Falls back to
-// import.meta.url for dev/test (webpack hardcodes it in standalone).
+// process.argv[1] = absolute path to standalone server.js at runtime.
+// Prefer that over import.meta.url: webpack hardcodes import.meta.url to the
+// *build machine* path (often Linux), which createRequire rejects on Windows
+// (ERR_INVALID_ARG_VALUE — no drive letter). Deps live in sibling
+// vendor/ (published) or node_modules/ (local build); cli.ts puts that dir on
+// NODE_PATH so require('sql.js') / better-sqlite3 resolve on all platforms.
 let _req: ((id: string) => unknown) | null = null;
 
 export function getRequire(): (id: string) => unknown {

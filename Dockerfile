@@ -18,16 +18,18 @@ COPY . .
 RUN npm run build
 RUN npm run build --prefix dashboard
 
-# Next's standalone output ships its own traced node_modules; cli.ts expects
-# .next/static copied alongside server.js — same fixup prepublishOnly does.
-RUN node -e "const{cpSync}=require('fs');cpSync('dashboard/.next/static','dashboard/.next/standalone/.next/static',{recursive:true})"
+# Next's standalone output ships traced deps under node_modules; npm pack strips
+# every dir named node_modules, so rename → vendor (same as prepublishOnly /
+# scripts/prepare-standalone.mjs). Use cp+rm instead of rename: BuildKit overlay
+# FS can put source/dest on different devices (EXDEV).
+RUN node scripts/prepare-standalone.mjs
 
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
 # root deps for dist/cli.js (undici, yaml, zod) — the standalone dashboard build
-# carries its own node_modules separately, this is just the launcher's.
+# carries its own vendored deps separately, this is just the launcher's.
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 

@@ -5,10 +5,15 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.15] — 2026-07-12
+
+### Fixed
+- **Dashboard never starts after npm install (`Cannot find module 'next'`)** — v1.1.14 removed the `standalone/node_modules` → `vendor` rename under the wrong assumption that npm only strips root-level `node_modules`. npm omits **every** directory named `node_modules` from the tarball, so the published package shipped `server.js` without traced deps. Restored the rename (Linux/macOS/Windows), dual-path `NODE_PATH` (`vendor` or local `node_modules`), and a hard fail in `scripts/prepare-standalone.mjs` if `vendor/next` is missing. Windows `createRequire` / `process.argv[1]` fixes from 1.1.12–1.1.13 stay intact.
+
 ## [1.1.14] — 2026-07-12
 
 ### Fixed
-- **Windows: SQLite resolution broken by `node_modules` → `vendor` rename** — npm does NOT strip nested `node_modules` (only root-level). The rename was based on a wrong assumption. Renaming broke `createRequire` resolution on Windows because webpack hardcodes `import.meta.url` to the build machine's Linux path. Removed the rename entirely — `node_modules` stays `node_modules`, Node's native resolution works on all platforms. Updated NODE_PATH, Dockerfile, and `getRequire()` accordingly.
+- **Windows: SQLite resolution** — simplified `getRequire()` and related packaging notes. **Regressed packaging** by dropping the `vendor` rename (see 1.1.15).
 
 ## [1.1.13] — 2026-07-12
 
