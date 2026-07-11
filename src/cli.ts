@@ -16,7 +16,7 @@
  */
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, copyFileSync, readFileSync, writeFileSync, mkdirSync, statSync, readlinkSync } from "node:fs";
+import { existsSync, copyFileSync, readFileSync, writeFileSync, mkdirSync, statSync, readlinkSync, appendFileSync } from "node:fs";
 import { resolve, dirname, join, delimiter } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -321,6 +321,25 @@ function resolveHostname(): string {
   }
 }
 
+/** node:sqlite requires --experimental-sqlite on Node ≥22.5; older Node doesn't
+ *  recognise the flag at all and crashes with "bad option". Gate on version. */
+function supportsExperimentalSqlite(): boolean {
+  const parts = process.versions.node.split(".").map(Number);
+  const maj = parts[0] ?? 0;
+  const min = parts[1] ?? 0;
+  return maj > 22 || (maj === 22 && min >= 5);
+}
+
+/** Write crash details to a log file so background/tray mode users can debug
+ *  when there's no terminal to see stderr. */
+function writeCrashLog(lines: string[]): void {
+  try {
+    const logFile = join(getDataDir(), "aigloo-crash.log");
+    const ts = new Date().toISOString();
+    appendFileSync(logFile, `\n[${ts}] aigloo dashboard crashed:\n${lines.join("\n")}\n`);
+  } catch { /* unwritable data dir */ }
+}
+
 function spawnDashboard(): ChildProcess {
   const standaloneDir = join(dashboardDir, ".next", "standalone");
   const standaloneServer = join(standaloneDir, "server.js");
@@ -339,7 +358,14 @@ function spawnDashboard(): ChildProcess {
     AIGLOO_VERSION: pkgVersion,
   };
 
-  const nodeFlags = ["--experimental-sqlite", "--require", join(root, "net-preload.cjs")];
+  // Node flags passed as direct spawn args (not NODE_OPTIONS — that's a string
+  // and breaks on Windows paths with spaces like C:\Program Files\...).
+  // --experimental-sqlite is only valid on Node ≥22.5; on older Node the flag
+  // itself crashes the process with "bad option".
+  const nodeFlags = [
+    ...(supportsExperimentalSqlite() ? ["--experimental-sqlite"] : []),
+    "--require", join(root, "net-preload.cjs"),
+  ];
 
   if (existsSync(standaloneServer)) {
     const nodePath = [join(standaloneDir, "vendor"), runtimeNodeModules, process.env.NODE_PATH]
@@ -353,15 +379,25 @@ function spawnDashboard(): ChildProcess {
     });
   }
 
+  // Dev fallback: npm.cmd on Windows (npm is npm.cmd, needs shell to resolve).
+  // Skip --require in NODE_OPTIONS — paths with spaces break NODE_OPTIONS
+  // string parsing. The preload is only needed in production (real IP trust
+  // header); dev mode runs on localhost anyway.
   const prod = existsSync(join(dashboardDir, ".next", "BUILD_ID"));
+  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   const args = prod ? ["run", "start"] : ["run", "dev"];
   const nodePath = [runtimeNodeModules, process.env.NODE_PATH].filter(Boolean).join(delimiter);
-  return spawn("npm", args, {
+  const devNodeOptions = [
+    ...(supportsExperimentalSqlite() ? ["--experimental-sqlite"] : []),
+    process.env.NODE_OPTIONS,
+  ].filter(Boolean).join(" ");
+  return spawn(npmCmd, args, {
     cwd: dashboardDir,
     stdio: ["ignore", "inherit", "pipe"],
     detached: true,
     windowsHide: true,
-    env: { ...env, NODE_PATH: nodePath, NODE_OPTIONS: ["--experimental-sqlite", `--require ${join(root, "net-preload.cjs")}`, process.env.NODE_OPTIONS].filter(Boolean).join(" ") },
+    shell: process.platform === "win32",
+    env: { ...env, NODE_PATH: nodePath, NODE_OPTIONS: devNodeOptions },
   });
 }
 
@@ -376,11 +412,11 @@ function ensureBetterSqlite3(): void {
 
   mkdirSync(runtimeDir, { recursive: true });
   if (!existsSync(join(runtimeDir, "package.json"))) {
-    writeFileSync(join(runtimeDir, "package.json"), JSON.stringify({ private: true }));
+    writeFileSync(join(runtimeDir, "package.json"), JSON.stringify({ name: "aigloo-runtime", version: "1.0.0", private: true }, null, 2));
   }
   console.log("  installing better-sqlite3 (fastest SQLite driver)…");
   try {
-    execSync("npm install better-sqlite3 --no-audit --no-fund --prefer-online --no-save", {
+    execSync("npm install better-sqlite3 --no-audit --no-fund --prefer-online", {
       cwd: runtimeDir, stdio: "pipe", timeout: 60_000,
     });
   } catch {
@@ -482,12 +518,13 @@ function hideToTray(): void {
   const thisFile = fileURLToPath(import.meta.url);
   // dev mode: thisFile is a .ts source — Node can't run it; use tsx instead.
   const [cmd, args] = thisFile.endsWith(".ts")
-    ? ["npx", ["tsx", thisFile, "--tray"]]
+    ? [process.platform === "win32" ? "npx.cmd" : "npx", ["tsx", thisFile, "--tray"]]
     : [process.execPath, [thisFile, "--tray"]];
   const bg = spawn(cmd, args, {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    shell: process.platform === "win32" && thisFile.endsWith(".ts"),
     env: {
       ...process.env,
       AIGLOO_ADMIN_PASSWORD: adminPassword,
@@ -556,6 +593,23 @@ async function main(): Promise<void> {
         process.stderr.write(data);
       });
     }
+    dash.on("error", (err: Error) => {
+      const msg = `spawn error: ${err.message}`;
+      crashLog.push(msg);
+      writeCrashLog([msg]);
+      console.error(`\n  ${msg}`);
+      if (!isShuttingDown) {
+        const delay = Math.min(1000 * (restartCount + 1), 5000);
+        restartCount++;
+        setTimeout(() => {
+          dash = spawnDashboard();
+          serverStartTime = Date.now();
+          children.length = 0;
+          children.push(dash);
+          attachCrashHandlers();
+        }, delay);
+      }
+    });
     dash.on("exit", (code) => {
       if (isShuttingDown || code === 0) {
         process.exit(code ?? 0);
@@ -566,6 +620,7 @@ async function main(): Promise<void> {
       if (restartCount >= MAX_RESTARTS) {
         console.error(`\n  aigloo crashed ${MAX_RESTARTS} times — resetting and retrying...`);
         if (crashLog.length) {
+          writeCrashLog(crashLog);
           console.error("\n  --- crash log ---");
           crashLog.forEach((l) => console.error(`  ${l}`));
           console.error("  --- end crash log ---\n");
@@ -585,6 +640,7 @@ async function main(): Promise<void> {
       const delay = Math.min(1000 * restartCount, 5000);
       console.error(`\n  aigloo exited (code ${code}) — restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
       if (crashLog.length) {
+        writeCrashLog(crashLog);
         console.error("\n  --- crash log ---");
         crashLog.forEach((l) => console.error(`  ${l}`));
         console.error("  --- end crash log ---\n");
@@ -602,13 +658,36 @@ async function main(): Promise<void> {
   attachCrashHandlers();
 
   const appUrl = `http://localhost:${GATEWAY_PORT}`;
+
+  // Tray mode: init the tray icon BEFORE waiting for the dashboard so the
+  // user always has a visible icon + a way to quit, even if the server
+  // crashes on boot. 9router inits tray after server-ready, but that means
+  // no tray if the server fails — we do better.
+  let trayInited = false;
+  if (mode === "tray") {
+    ensureTrayRuntime({ silent: false });
+    trayInited = initTray({
+      dashboardUrl: appUrl,
+      port: GATEWAY_PORT,
+      onQuit: () => { isShuttingDown = true; shutdown(); },
+    });
+  }
+
   const ready = await waitForGateway(`http://127.0.0.1:${GATEWAY_PORT}/health`, 30000, (s) => s > 0 && s < 500);
   if (!ready) {
     console.error(`\n  aigloo failed to start — dashboard did not respond within 30s.`);
     if (crashLog.length) {
+      writeCrashLog(crashLog);
       console.error("\n  --- crash log ---");
       crashLog.forEach((l) => console.error(`  ${l}`));
       console.error("  --- end crash log ---\n");
+    }
+    if (trayInited) {
+      // Keep the tray alive — crash handlers are still running and will
+      // auto-restart the dashboard. User can Quit from the tray.
+      console.error(`  crash log saved to ${join(getDataDir(), "aigloo-crash.log")}`);
+      console.error("  tray is active — auto-restart will keep trying. Right-click tray → Quit to stop.");
+      return;
     }
     console.error(`  check if port ${GATEWAY_PORT} is free, or set AIGLOO_PORT to a different port.`);
     isShuttingDown = true;
@@ -620,14 +699,8 @@ async function main(): Promise<void> {
     console.log(`\n  admin password (generated): ${adminPassword}`);
     console.log("  set AIGLOO_ADMIN_PASSWORD to keep it stable across runs.\n");
   }
-  if (mode === "tray") {
-    ensureTrayRuntime({ silent: false });
-    const started = initTray({ dashboardUrl: appUrl, port: GATEWAY_PORT, onQuit: () => { isShuttingDown = true; shutdown(); } });
-    console.log(
-      started
-        ? "\n  running in the system tray — right-click the icon for Open Dashboard / Quit.\n"
-        : "\n  (tray unavailable on this session — running in the background; Ctrl-C or kill to stop.)\n",
-    );
+  if (trayInited) {
+    console.log("\n  running in the system tray — right-click the icon for Open Dashboard / Quit.\n");
   } else if (wantBrowser) {
     openBrowser(appUrl);
   } else {

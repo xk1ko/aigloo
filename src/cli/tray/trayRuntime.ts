@@ -76,7 +76,7 @@ export function ensureTrayRuntime({ silent = false } = {}): boolean {
   }
   const cwd = ensureRuntimeDir();
   if (!silent) console.log("  installing system tray (first run)…");
-  const res = spawnSync("npm", ["install", `${SYSTRAY_PKG}@${SYSTRAY_VERSION}`, "--no-save", "--no-audit", "--no-fund"], {
+  const res = spawnSync("npm", ["install", `${SYSTRAY_PKG}@${SYSTRAY_VERSION}`, "--no-audit", "--no-fund"], {
     cwd,
     stdio: silent ? "ignore" : "inherit",
     timeout: 120_000,

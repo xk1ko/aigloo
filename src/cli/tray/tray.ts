@@ -134,7 +134,8 @@ function initWindowsTray(opts: TrayOptions): boolean {
         ),
     });
     return true;
-  } catch {
+  } catch (e) {
+    process.stderr.write(`  tray init error: ${(e as Error).message}\n`);
     return false;
   }
 }

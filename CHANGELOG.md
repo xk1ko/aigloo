@@ -5,6 +5,22 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.10] — 2026-07-12
+
+### Fixed
+- **Windows: dashboard crashed on Node < 22.5** — `--experimental-sqlite` flag was passed unconditionally. On Node < 22.5 the flag doesn't exist → Node exits with "bad option" → dashboard never starts → `ERR_CONNECTION_REFUSED`. Now gated on `process.versions.node >= 22.5`; older Node silently falls through to `sql.js` (WASM) driver
+- **Tray icon never appeared if dashboard failed** — tray was initialized AFTER `waitForGateway` (30s timeout). If the dashboard crashed on boot, the tray was never created → user had no way to quit or know what happened. Now tray inits BEFORE `waitForGateway` — icon shows immediately, even if the server is still starting or has crashed
+- **Tray mode: process exited on dashboard failure** — if `waitForGateway` timed out, `shutdown()` killed the tray and `process.exit(1)` quit. Now in tray mode, keeps the tray alive — crash handlers continue auto-restarting the dashboard, user can Quit from the tray
+- **No crash log in background/tray mode** — stderr was captured in-memory but never persisted. In tray mode (detached, `stdio: "ignore"`), crash details were completely lost. Now writes to `~/.aigloo/aigloo-crash.log` (or `%APPDATA%\aigloo\` on Windows) on every crash
+- **`better-sqlite3` + `systray2` install conflict** — both used `--no-save` in `~/.aigloo/runtime/`. Each `npm install` pruned packages not in `package.json` — second install killed first's packages. Now uses `--save` (default) so both persist in `package.json` dependencies
+- **Windows tray init silently swallowed errors** — `catch { return false }` hid all errors. Now logs `tray init error: <message>` to stderr
+- **`npx` spawn broken on Windows in dev mode** — `hideToTray` used `spawn("npx", ...)` without `shell: true`. On Windows `npx` is `npx.cmd` and needs a shell to resolve. Now uses `npx.cmd` + `shell: true` on Windows
+- **Spawn errors silently dropped** — `spawn` ENOENT (executable not found) emits an `error` event, not `exit`. The crash handler only listened for `exit`, so spawn failures on Windows (e.g., `npm` not found without `shell: true`) were completely silent — no restart, no crash log, no error message. Now handles `error` events with restart + crash log
+
+### Changed
+- **Dev fallback: no `--require` in NODE_OPTIONS** — paths with spaces (e.g., `C:\Program Files\...`) break `NODE_OPTIONS` string parsing. The preload (`net-preload.cjs`) is only needed in production (real IP trust header); dev mode runs on localhost anyway
+- **Runtime `package.json` format** — `ensureBetterSqlite3` now writes `{ name: "aigloo-runtime", version: "1.0.0", private: true }` (was bare `{ private: true }`) to match `ensureTrayRuntime` and avoid npm warnings
+
 ## [1.1.9] — 2026-07-12
 
 ### Fixed
