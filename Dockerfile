@@ -18,10 +18,9 @@ COPY . .
 RUN npm run build
 RUN npm run build --prefix dashboard
 
-# Next's standalone output ships traced deps under node_modules; npm pack strips
-# every dir named node_modules, so rename → vendor (same as prepublishOnly /
-# scripts/prepare-standalone.mjs). Use cp+rm instead of rename: BuildKit overlay
-# FS can put source/dest on different devices (EXDEV).
+# Copy static into standalone, strip junk, verify node_modules/next is present
+# (same as prepublishOnly / scripts/prepare-standalone.mjs). Keeps traced deps
+# as node_modules — ignore rules are anchored so npm pack ships them.
 RUN node scripts/prepare-standalone.mjs
 
 FROM node:22-alpine
@@ -29,7 +28,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # root deps for dist/cli.js (undici, yaml, zod) — the standalone dashboard build
-# carries its own vendored deps separately, this is just the launcher's.
+# carries its own node_modules separately, this is just the launcher's.
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 

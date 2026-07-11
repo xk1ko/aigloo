@@ -1,3 +1,4 @@
+# Anchored to dashboard/ only (same reason as .npmignore).
 /node_modules
 /.next
 /out

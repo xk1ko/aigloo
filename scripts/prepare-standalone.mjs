@@ -2,18 +2,20 @@
 /**
  * Post-build fixup for the Next.js standalone output before npm pack / Docker COPY.
  *
- * Why rename node_modules → vendor?
- *   npm ALWAYS omits directories named `node_modules` from the published tarball
- *   (root and nested). Next's `output: "standalone"` puts traced runtime deps in
- *   `dashboard/.next/standalone/node_modules` (including `next` itself). Without
- *   this rename the published package ships server.js with no deps →
- *   `Cannot find module 'next'` on every platform (Linux/macOS/Windows).
+ * What this does:
+ *   - Copy dashboard/.next/static into standalone (Next does not put it there)
+ *   - Drop unused standalone/src and strip dist/ *.map / *.d.ts
+ *   - Migrate legacy standalone/vendor → node_modules (v1.1.15 rename workaround)
+ *   - Fail hard if standalone/node_modules/next is missing
  *
- * cli.ts spawnDashboard() sets NODE_PATH to standalone/vendor (or node_modules
- * for unreleased local builds that skip this script).
+ * Why we do NOT rename node_modules → vendor:
+ *   Nested node_modules pack fine when ignore rules are anchored (`/node_modules`).
+ *   The old unanchored `node_modules/` in dashboard/.npmignore was stripping
+ *   standalone/node_modules from the tarball — that was the real bug, not npm.
+ *   Keep the natural name so Node resolves `next` without NODE_PATH renames.
  *
- * Also: copy .next/static into standalone, drop unused standalone/src, strip
- * sourcemaps/d.ts from dist/, and fail hard if vendor/next is missing.
+ * cli.ts sets NODE_PATH to standalone/node_modules (+ runtime) so require() of
+ * traced/runtime deps works even when nested resolution is odd.
  */
 import {
   cpSync,
@@ -43,26 +45,31 @@ if (!existsSync(join(standaloneDir, "server.js"))) {
   die(`missing ${standaloneDir}/server.js — run dashboard build first`);
 }
 
-// Prefer rename (same FS); fall back to cp+rm for Docker overlay EXDEV.
-if (existsSync(nm)) {
-  if (existsSync(vendor)) rmSync(vendor, { recursive: true, force: true });
-  try {
-    renameSync(nm, vendor);
-  } catch (err) {
-    if (err && (err.code === "EXDEV" || err.code === "EPERM")) {
-      cpSync(nm, vendor, { recursive: true });
-      rmSync(nm, { recursive: true, force: true });
-    } else {
-      throw err;
+// Legacy: v1.1.15 renamed node_modules → vendor so npm pack would ship deps.
+// With anchored ignore rules that is unnecessary; migrate back if present.
+if (existsSync(vendor)) {
+  if (existsSync(nm)) {
+    rmSync(vendor, { recursive: true, force: true });
+    console.log("  prepare-standalone: removed legacy vendor/ (node_modules already present)");
+  } else {
+    try {
+      renameSync(vendor, nm);
+    } catch (err) {
+      if (err && (err.code === "EXDEV" || err.code === "EPERM")) {
+        cpSync(vendor, nm, { recursive: true });
+        rmSync(vendor, { recursive: true, force: true });
+      } else {
+        throw err;
+      }
     }
+    console.log("  prepare-standalone: migrated legacy vendor/ → node_modules");
   }
-  console.log("  prepare-standalone: renamed standalone/node_modules → vendor");
-} else if (existsSync(vendor)) {
-  console.log("  prepare-standalone: vendor/ already present");
-} else {
+}
+
+if (!existsSync(nm)) {
   die(
-    "standalone has neither node_modules nor vendor — Next did not emit traced deps. " +
-      "Check dashboard next.config output: 'standalone'.",
+    "standalone/node_modules missing — Next did not emit traced deps. " +
+      "Check dashboard next.config output: 'standalone', then rebuild.",
   );
 }
 
@@ -91,12 +98,12 @@ if (existsSync(distDir) && statSync(distDir).isDirectory()) {
   stripMapsAndDts(distDir);
 }
 
-const nextPkg = join(vendor, "next", "package.json");
+const nextPkg = join(nm, "next", "package.json");
 if (!existsSync(nextPkg)) {
   die(
-    `vendor/next/package.json missing after rename — refusing to ship a broken package.\n` +
+    `node_modules/next/package.json missing — refusing to ship a broken package.\n` +
       `  looked for: ${nextPkg}`,
   );
 }
 
-console.log("  prepare-standalone: ok (vendor/next present)");
+console.log("  prepare-standalone: ok (node_modules/next present)");

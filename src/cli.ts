@@ -368,12 +368,12 @@ function spawnDashboard(): ChildProcess {
   ];
 
   if (existsSync(standaloneServer)) {
-    // Published packages rename standalone/node_modules → vendor so npm pack
-    // ships the traced deps (npm always strips any dir named node_modules).
-    // Local `next build` still leaves node_modules in place — accept either.
-    const vendorDir = join(standaloneDir, "vendor");
+    // Traced deps live in standalone/node_modules. Accept legacy standalone/vendor
+    // from v1.1.15 packages so upgrades keep working until users reinstall.
+    // NODE_PATH helps require() of next/sql.js across OSes.
     const nmDir = join(standaloneDir, "node_modules");
-    const standaloneDeps = existsSync(vendorDir) ? vendorDir : nmDir;
+    const vendorDir = join(standaloneDir, "vendor");
+    const standaloneDeps = existsSync(nmDir) ? nmDir : vendorDir;
     const nodePath = [standaloneDeps, runtimeNodeModules, process.env.NODE_PATH]
       .filter(Boolean).join(delimiter);
     return spawn("node", [...nodeFlags, standaloneServer], {

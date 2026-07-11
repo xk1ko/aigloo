@@ -1,15 +1,17 @@
-node_modules/
-dist/
-.next/
+# Root install only — do NOT use unanchored `node_modules/` (that would also
+# match dashboard/.next/standalone/node_modules and break npm pack).
+/node_modules
+/dist
+/.next
 config.yaml
 config.yaml.bak
 config.yaml.tmp
-data/
+/data
 *.sqlite
 *.sqlite-journal
 .env
 .env.local
-dashboard/.next/
-dashboard/node_modules/
-dashboard/.env.local
+/dashboard/node_modules
+/dashboard/.next
+/dashboard/.env.local
 *.log
