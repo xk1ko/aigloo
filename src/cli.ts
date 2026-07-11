@@ -220,7 +220,7 @@ function killAllAppProcesses(): void {
       }
     } catch { /* none found */ }
     for (const pid of pids) {
-      try { execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {}
+      try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {}
     }
   } else {
     try {
@@ -252,7 +252,7 @@ async function ensurePortFree(port: number, envVar: string): Promise<void> {
     const pid = pidOnPort(port);
     if (!pid) return;
     console.log(`  port ${port} held by stale process (pid ${pid}) — killing it.`);
-    try { execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" }); } catch {}
+    try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" }); } catch {}
     await new Promise((r) => setTimeout(r, 500));
     return;
   }
@@ -325,16 +325,6 @@ function spawnDashboard(): ChildProcess {
   const standaloneDir = join(dashboardDir, ".next", "standalone");
   const standaloneServer = join(standaloneDir, "server.js");
 
-  // Preload patches http.createServer to tag the real TCP peer address onto
-  // every request (see net-preload.cjs) — getClientIp() in v1-handler.ts
-  // trusts only that tagged header, never a raw client-supplied
-  // X-Forwarded-For. Appended (not replaced) so any NODE_OPTIONS the operator
-  // already set keeps working.
-  const preload = `--require ${join(root, "net-preload.cjs")}`;
-  // node:sqlite needs this flag on Node 22.5–22.12 (unflagged from 22.13 on); a
-  // no-op there and on anything newer, so always safe to pass.
-  const nodeOptions = [process.env.NODE_OPTIONS, preload, "--experimental-sqlite"].filter(Boolean).join(" ");
-
   const runtimeNodeModules = join(getDataDir(), "runtime", "node_modules");
 
   const env = {
@@ -347,16 +337,18 @@ function spawnDashboard(): ChildProcess {
     AIGLOO_CONFIG: getConfigPath(),
     SESSION_SECRET: sessionSecret,
     AIGLOO_VERSION: pkgVersion,
-    NODE_OPTIONS: nodeOptions,
   };
+
+  const nodeFlags = ["--experimental-sqlite", "--require", join(root, "net-preload.cjs")];
 
   if (existsSync(standaloneServer)) {
     const nodePath = [join(standaloneDir, "vendor"), runtimeNodeModules, process.env.NODE_PATH]
       .filter(Boolean).join(delimiter);
-    return spawn("node", [standaloneServer], {
+    return spawn("node", [...nodeFlags, standaloneServer], {
       cwd: standaloneDir,
       stdio: ["ignore", "inherit", "pipe"],
       detached: true,
+      windowsHide: true,
       env: { ...env, NODE_PATH: nodePath },
     });
   }
@@ -368,7 +360,8 @@ function spawnDashboard(): ChildProcess {
     cwd: dashboardDir,
     stdio: ["ignore", "inherit", "pipe"],
     detached: true,
-    env: { ...env, NODE_PATH: nodePath },
+    windowsHide: true,
+    env: { ...env, NODE_PATH: nodePath, NODE_OPTIONS: ["--experimental-sqlite", `--require ${join(root, "net-preload.cjs")}`, process.env.NODE_OPTIONS].filter(Boolean).join(" ") },
   });
 }
 
@@ -494,6 +487,7 @@ function hideToTray(): void {
   const bg = spawn(cmd, args, {
     detached: true,
     stdio: "ignore",
+    windowsHide: true,
     env: {
       ...process.env,
       AIGLOO_ADMIN_PASSWORD: adminPassword,
@@ -570,14 +564,22 @@ async function main(): Promise<void> {
       const aliveMs = Date.now() - serverStartTime;
       if (aliveMs >= 30000) restartCount = 0;
       if (restartCount >= MAX_RESTARTS) {
-        console.error(`\n  aigloo crashed ${MAX_RESTARTS} times — giving up.`);
+        console.error(`\n  aigloo crashed ${MAX_RESTARTS} times — resetting and retrying...`);
         if (crashLog.length) {
           console.error("\n  --- crash log ---");
           crashLog.forEach((l) => console.error(`  ${l}`));
           console.error("  --- end crash log ---\n");
         }
-        shutdown();
-        process.exit(code ?? 1);
+        crashLog = [];
+        restartCount = 0;
+        setTimeout(() => {
+          dash = spawnDashboard();
+          serverStartTime = Date.now();
+          children.length = 0;
+          children.push(dash);
+          attachCrashHandlers();
+        }, 5000);
+        return;
       }
       restartCount++;
       const delay = Math.min(1000 * restartCount, 5000);

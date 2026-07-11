@@ -20,22 +20,33 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const res = await fetch("/api/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
-      // Hard navigation, not router.replace()/router.refresh() — the App
-      // Router's client-side cache holds stale redirect-to-login RSC
-      // payloads for every page visited pre-login, and refresh() only
-      // busts the cache for the current route. A full navigation clears
-      // it all, so subsequent Link clicks don't bounce back to /login.
-      window.location.href = "/";
-    } else {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(body.error ?? "login failed");
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password }),
+        signal: ctrl.signal,
+      });
+      if (res.ok) {
+        // Hard navigation, not router.replace()/router.refresh() — the App
+        // Router's client-side cache holds stale redirect-to-login RSC
+        // payloads for every page visited pre-login, and refresh() only
+        // busts the cache for the current route. A full navigation clears
+        // it all, so subsequent Link clicks don't bounce back to /login.
+        window.location.href = "/";
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "login failed");
+        setBusy(false);
+      }
+    } catch {
+      // AbortError (timeout) or TypeError (server crashed / connection refused)
+      setError("server not responding — aigloo may have crashed. restart it and try again.");
       setBusy(false);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -12,7 +12,6 @@ import { TRAY_ICON_PNG_BASE64 } from "./icon.js";
 import { isAutoStartEnabled, enableAutoStart, disableAutoStart } from "./autostart.js";
 
 export interface TrayOptions {
-  /** dashboard URL opened by "Open Dashboard". */
   dashboardUrl: string;
   port: number;
   onQuit: () => void;
