@@ -255,7 +255,11 @@ export async function handleAdmin(
   if (m === "GET" && s.length === 1 && s[0] === "usage") {
     if (!deps.db) return { status: 503, body: { error: "usage tracking disabled" } };
     const since = search.has("since") ? Number(search.get("since")) : 0;
-    return { status: 200, body: deps.db.summary(Number.isFinite(since) ? since : 0) };
+    const clientKey = search.get("client_key") ?? undefined;
+    return {
+      status: 200,
+      body: deps.db.summary(Number.isFinite(since) ? since : 0, clientKey !== undefined ? { client_key: clientKey } : undefined),
+    };
   }
 
   if (m === "GET" && s.length === 2 && s[0] === "usage" && s[1] === "series") {
@@ -264,13 +268,26 @@ export async function handleAdmin(
     const bucket = Number(search.get("bucket"));
     const sinceMs = Number.isFinite(since) && since > 0 ? since : Date.now() - 24 * 3600 * 1000;
     const bucketMs = Number.isFinite(bucket) && bucket > 0 ? bucket : 3600 * 1000;
-    return { status: 200, body: { series: deps.db.series(sinceMs, bucketMs) } };
+    const clientKey = search.get("client_key") ?? undefined;
+    return {
+      status: 200,
+      body: {
+        series: deps.db.series(sinceMs, bucketMs, clientKey !== undefined ? { client_key: clientKey } : undefined),
+      },
+    };
   }
 
   if (m === "GET" && s.length === 2 && s[0] === "savings" && s[1] === "summary") {
     if (!deps.db) return { status: 503, body: { error: "usage tracking disabled" } };
     const since = search.has("since") ? Number(search.get("since")) : 0;
-    return { status: 200, body: deps.db.savingsSummary(Number.isFinite(since) ? since : 0) };
+    const clientKey = search.get("client_key") ?? undefined;
+    return {
+      status: 200,
+      body: deps.db.savingsSummary(
+        Number.isFinite(since) ? since : 0,
+        clientKey !== undefined ? { client_key: clientKey } : undefined,
+      ),
+    };
   }
 
   if (m === "GET" && s.length === 1 && s[0] === "logs") {

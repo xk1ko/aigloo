@@ -2,10 +2,19 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { gw } from "@/lib/gw";
 import { handleAdmin } from "@/gw/core/admin-handler.js";
-import { isSessionValid, SESSION_COOKIE } from "@/lib/session";
+import { parseSession, memberPathAllowed, SESSION_COOKIE } from "@/lib/session";
 import { SECURITY_HEADERS, adminResultToResponse, bodyTooLarge } from "@/lib/http";
+import { clientKeyFingerprint } from "@/gw/middleware/auth.js";
+import { maskKey } from "@/gw/config.js";
 
 type Ctx = { params: Promise<{ path: string[] }> };
+
+const MEMBER_ADMIN_GET = new Set([
+  "usage",
+  "usage/series",
+  "savings/summary",
+  "keys",
+]);
 
 async function proxy(req: NextRequest, path: string[]): Promise<NextResponse | Response> {
   const sub = path.join("/");
@@ -14,12 +23,14 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse | R
   }
 
   const g = gw();
-  // Defense in depth: proxy.ts (middleware) already gates every /api/* route on
-  // the same version-bound session check — re-verified here explicitly rather
-  // than trusting middleware ordering for the most sensitive path (this is the
-  // browser dashboard's only channel into admin mutations).
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  if (!isSessionValid(token, g.auth.version)) {
+  const keys = g.state.config.raw.server.api_keys ?? [];
+  const fps = keys.map(clientKeyFingerprint);
+  const session = parseSession(req.cookies.get(SESSION_COOKIE)?.value, {
+    currentAdminVersion: g.auth.version,
+    validFingerprints: fps,
+  });
+
+  if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: SECURITY_HEADERS });
   }
 
@@ -28,11 +39,46 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse | R
   }
 
   const segments = sub.split("/").slice(1);
+  const adminPath = segments.join("/");
   const url = new URL(req.url);
-  const search = url.searchParams;
+  const search = new URLSearchParams(url.searchParams);
+
+  // Members: read-only usage scoped to their fingerprint
+  if (session.role === "member") {
+    const pathname = `/api/gw/admin/${adminPath}`;
+    if (req.method !== "GET" || !memberPathAllowed(pathname) || !MEMBER_ADMIN_GET.has(adminPath)) {
+      return NextResponse.json(
+        { error: "forbidden — access key sessions can only view their own usage" },
+        { status: 403, headers: SECURITY_HEADERS },
+      );
+    }
+
+    if (adminPath === "keys") {
+      const raw = keys.find((k) => clientKeyFingerprint(k) === session.fingerprint);
+      if (!raw) {
+        return NextResponse.json({ error: "key no longer valid" }, { status: 401, headers: SECURITY_HEADERS });
+      }
+      return NextResponse.json(
+        [
+          {
+            fingerprint: session.fingerprint,
+            name: g.state.config.raw.server.key_names?.[raw] ?? maskKey(raw),
+            masked: maskKey(raw),
+          },
+        ],
+        { headers: SECURITY_HEADERS },
+      );
+    }
+
+    // Force scope — never trust client-supplied client_key
+    search.set("client_key", session.fingerprint);
+  }
 
   let body: unknown = undefined;
   if (req.method !== "GET" && req.method !== "DELETE") {
+    if (session.role === "member") {
+      return NextResponse.json({ error: "forbidden" }, { status: 403, headers: SECURITY_HEADERS });
+    }
     body = await req.json().catch(() => undefined);
   }
 

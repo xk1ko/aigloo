@@ -1,41 +1,58 @@
 import { NextResponse } from "next/server";
-import { sealSession, SESSION_COOKIE } from "@/lib/session";
+import { sealSession, sealMemberSession, SESSION_COOKIE } from "@/lib/session";
 import { gw } from "@/lib/gw";
+import { matchKey, clientKeyFingerprint } from "@/gw/middleware/auth.js";
 
 const DEFAULT_PASSWORD = "123456";
 
-/** Whether the admin password is still the seeded default — lets the login
- *  page hint at it for a first run, without ever sending the password itself
- *  to the browser. Already public knowledge (documented as the default in
- *  the README), so this isn't exposing a new secret. */
-export async function GET(): Promise<NextResponse> {
-  const g = gw();
-  return NextResponse.json({ isDefault: g.auth.verify(DEFAULT_PASSWORD) });
-}
-
-export async function POST(req: Request): Promise<NextResponse> {
-  const { password } = (await req.json().catch(() => ({}))) as { password?: string };
-  if (!password) {
-    return NextResponse.json({ error: "password required" }, { status: 400 });
-  }
-  const g = gw();
-  if (!g.auth.verify(password)) {
-    return NextResponse.json({ error: "wrong password" }, { status: 401 });
-  }
-
-  // Set cookie on the response object (not cookies() from next/headers).
-  // Some Next/browser combos drop jar.set() from route handlers; attaching to
-  // NextResponse is the reliable path so the subsequent hard nav to / carries
-  // the session and the proxy doesn't bounce back to /login.
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, sealSession(g.auth.version), {
+function cookieOpts(req: Request) {
+  return {
     httpOnly: true,
-    sameSite: "lax",
-    // Only Secure over real HTTPS. Localhost HTTP must stay non-secure or
-    // browsers refuse to store the cookie → login appears to do nothing.
+    sameSite: "lax" as const,
     secure: req.headers.get("x-forwarded-proto") === "https",
     path: "/",
     maxAge: 60 * 60 * 12,
+  };
+}
+
+/** Whether the admin password is still the seeded default — login page hint. */
+export async function GET(): Promise<NextResponse> {
+  const g = gw();
+  return NextResponse.json({
+    isDefault: g.auth.verify(DEFAULT_PASSWORD),
+    memberLogin: (g.state.config.raw.server.api_keys?.length ?? 0) > 0,
   });
-  return res;
+}
+
+/**
+ * POST body: `{ password?: string }` — admin password **or** a gateway access key.
+ * Tries admin password first, then gateway keys (constant-time match).
+ */
+export async function POST(req: Request): Promise<NextResponse> {
+  const body = (await req.json().catch(() => ({}))) as { password?: string; gatewayKey?: string };
+  const secret = (body.password ?? body.gatewayKey ?? "").trim();
+  if (!secret) {
+    return NextResponse.json({ error: "password or access key required" }, { status: 400 });
+  }
+
+  const g = gw();
+
+  // 1) Admin password
+  if (g.auth.verify(secret)) {
+    const res = NextResponse.json({ ok: true, role: "admin" as const });
+    res.cookies.set(SESSION_COOKIE, sealSession(g.auth.version), cookieOpts(req));
+    return res;
+  }
+
+  // 2) Gateway access key → member session
+  const keys = g.state.config.raw.server.api_keys ?? [];
+  const matched = matchKey(secret, keys);
+  if (matched) {
+    const fp = clientKeyFingerprint(matched);
+    const res = NextResponse.json({ ok: true, role: "member" as const, fingerprint: fp });
+    res.cookies.set(SESSION_COOKIE, sealMemberSession(fp), cookieOpts(req));
+    return res;
+  }
+
+  return NextResponse.json({ error: "wrong password or access key" }, { status: 401 });
 }

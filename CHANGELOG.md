@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Usage by access key** — Usage summary includes `by_key` (per gateway-key fingerprint). Dashboard shows a **By Access Key** panel with key labels, spend, tokens, and request counts for the selected window. `GET /admin/keys/usage` accepts optional `since` for window-scoped key totals
+- **Member login with access key** — Login accepts admin password **or** a gateway access key. Key sessions (`role: member`) only see **Usage** (scoped to that key’s fingerprint); admin password keeps full console. `GET /api/me` returns role; proxy + `/api/gw` enforce member ACL
 
 ### Fixed
 - **No-shell PATH detection** — CLI Tools and headroom no longer shell out to `where`/`which` (or string `python --version`). They walk PATH + known install dirs with `fs` (`src/platform/resolveBin.ts`); Python version checks use `execFile` only. Removes remaining Windows console flashes on Check/Start and CLI detection

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "./Icon";
@@ -21,14 +22,33 @@ const SYSTEM: NavItem[] = [
   { href: "/config", label: "Settings", icon: "settings" },
 ];
 
+const MEMBER_NAV: NavItem[] = [
+  { href: "/usage", label: "Usage", icon: "bar_chart" },
+];
+
 export function Sidebar() {
   const path = usePathname();
   const router = useRouter();
+  const [role, setRole] = useState<"admin" | "member" | null>(null);
+  const [memberName, setMemberName] = useState("");
+
+  useEffect(() => {
+    fetch("/api/me", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { role?: string; name?: string } | null) => {
+        if (d?.role === "member") {
+          setRole("member");
+          setMemberName(d.name ?? "Access key");
+        } else if (d?.role === "admin") {
+          setRole("admin");
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function logout() {
     await fetch("/api/logout", { method: "POST" });
-    router.replace("/login");
-    router.refresh();
+    window.location.href = "/login";
   }
 
   const isActive = (href: string) =>
@@ -50,9 +70,13 @@ export function Sidebar() {
     );
   };
 
+  const mainNav = role === "member" ? MEMBER_NAV : MAIN;
+  const systemNav = role === "member" ? [] : SYSTEM;
+  const homeHref = role === "member" ? "/usage" : "/";
+
   return (
     <aside className="app-sidebar">
-      <Link href="/" className="brand-isle" data-label="aigloo">
+      <Link href={homeHref} className="brand-isle" data-label="aigloo">
         <svg viewBox="0 0 512 512" width="26" height="26" fill="none" aria-hidden>
           <g transform="translate(60, 60) scale(14)" stroke="currentColor" strokeLinecap="round">
             <path d="M4 20C4 12.268 8.477 6 14 6C19.523 6 24 12.268 24 20" strokeWidth="2"/>
@@ -65,12 +89,25 @@ export function Sidebar() {
       <div className="nav-isle-divider nav-isle-divider-brand" />
 
       <nav className="flex flex-col items-center gap-4">
-        {MAIN.map(link)}
-        <div className="nav-isle-divider" />
-        {SYSTEM.map(link)}
+        {mainNav.map(link)}
+        {systemNav.length > 0 && (
+          <>
+            <div className="nav-isle-divider" />
+            {systemNav.map(link)}
+          </>
+        )}
       </nav>
 
-      <button onClick={logout} className="nav-isle mt-4" data-label="Disconnect">
+      {role === "member" && memberName && (
+        <div
+          className="mt-auto mb-2 max-w-[52px] truncate px-1 text-center text-[9px] leading-tight text-text-subtle"
+          title={memberName}
+        >
+          {memberName}
+        </div>
+      )}
+
+      <button onClick={logout} className={`nav-isle ${role === "member" ? "" : "mt-4"}`} data-label="Disconnect">
         <Icon name="logout" size={19} />
       </button>
     </aside>

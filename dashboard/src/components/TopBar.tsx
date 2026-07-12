@@ -120,11 +120,22 @@ export function TopBar() {
   const [confirmShutdown, setConfirmShutdown] = useState(false);
   const [stopped, setStopped] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [isMember, setIsMember] = useState(false);
 
   useEffect(() => {
-    void adminApi.version().then((r) => {
-      if (r.ok && r.data) setVersion(r.data);
-    });
+    // Members cannot call admin version/shutdown APIs
+    void fetch("/api/me", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { role?: string } | null) => {
+        if (d?.role === "member") {
+          setIsMember(true);
+          return;
+        }
+        void adminApi.version().then((r) => {
+          if (r.ok && r.data) setVersion(r.data);
+        });
+      })
+      .catch(() => {});
   }, []);
 
   async function doShutdown() {
@@ -195,14 +206,16 @@ export function TopBar() {
           )}
         </button>
 
-        <button
-          onClick={() => setConfirmShutdown(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-text-subtle transition-colors hover:text-danger hover:bg-danger/10"
-          aria-label="Shut down gateway"
-          title="Shut down the gateway"
-        >
-          <Icon name="power_settings_new" size={18} />
-        </button>
+        {!isMember && (
+          <button
+            onClick={() => setConfirmShutdown(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-text-subtle transition-colors hover:text-danger hover:bg-danger/10"
+            aria-label="Shut down gateway"
+            title="Shut down the gateway"
+          >
+            <Icon name="power_settings_new" size={18} />
+          </button>
+        )}
 
         <div className="glass flex items-center gap-2 rounded-full py-1 pl-1 pr-3">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">

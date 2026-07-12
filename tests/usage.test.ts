@@ -161,6 +161,14 @@ describe("UsageDB client_key", () => {
     expect(s.by_key[0]!.cost).toBeGreaterThanOrEqual(s.by_key[1]!.cost);
     expect(s.by_key.map((k) => k.client_key).sort()).toEqual(["aaaa1111", "bbbb2222"]);
   });
+
+  it("summary filters by client_key for member views", () => {
+    const s = seed().summary(0, { client_key: "aaaa1111" });
+    expect(s.total.cost).toBeCloseTo(1);
+    expect(s.by_key).toHaveLength(1);
+    expect(s.by_key[0]!.client_key).toBe("aaaa1111");
+    expect(s.by_provider.every((p) => p.provider === "openai")).toBe(true);
+  });
   it("record defaults client_key to '' when omitted, excluded from a keyed sum", () => {
     const db = new UsageDB(":memory:");
     db.record({ alias: "a", provider: "p", model: "m", tokens_in: 1, tokens_out: 1, cached_tokens: 0, cost: 9, status: 200, latency_ms: 1, stream: 0, ts: 1 });

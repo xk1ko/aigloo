@@ -385,43 +385,54 @@ export class UsageDB {
     );
   }
 
-  /** Summary over rows with ts >= sinceMs (default: all time). */
-  summary(sinceMs = 0): UsageSummary {
+  /**
+   * Summary over rows with ts >= sinceMs (default: all time).
+   * Optional `client_key` scopes everything to one access-key fingerprint (member view).
+   */
+  summary(sinceMs = 0, filter?: { client_key?: string }): UsageSummary {
+    const clauses = ["ts >= ?"];
+    const params: Array<number | string> = [sinceMs];
+    if (filter?.client_key !== undefined) {
+      clauses.push("client_key = ?");
+      params.push(filter.client_key);
+    }
+    const where = clauses.join(" AND ");
+
     const total = this.db
       .prepare(
         `SELECT COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
                 COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
                 COALESCE(SUM(cost_out),0) cost_out
-         FROM usage WHERE ts >= ?`,
+         FROM usage WHERE ${where}`,
       )
-      .get(sinceMs) as SqlRow;
+      .get(...params) as SqlRow;
 
     const by_provider = this.db
       .prepare(
         `SELECT provider, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
                 COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
                 COALESCE(SUM(cost_out),0) cost_out
-         FROM usage WHERE ts >= ? GROUP BY provider ORDER BY cost DESC`,
+         FROM usage WHERE ${where} GROUP BY provider ORDER BY cost DESC`,
       )
-      .all(sinceMs) as SqlRow[];
+      .all(...params) as SqlRow[];
 
     const by_model = this.db
       .prepare(
         `SELECT alias, model, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
                 COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
                 COALESCE(SUM(cost_out),0) cost_out
-         FROM usage WHERE ts >= ? GROUP BY alias, model ORDER BY cost DESC`,
+         FROM usage WHERE ${where} GROUP BY alias, model ORDER BY cost DESC`,
       )
-      .all(sinceMs) as SqlRow[];
+      .all(...params) as SqlRow[];
 
     const by_key = this.db
       .prepare(
         `SELECT client_key, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
                 COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
                 COALESCE(SUM(cost_out),0) cost_out
-         FROM usage WHERE ts >= ? GROUP BY client_key ORDER BY cost DESC`,
+         FROM usage WHERE ${where} GROUP BY client_key ORDER BY cost DESC`,
       )
-      .all(sinceMs) as SqlRow[];
+      .all(...params) as SqlRow[];
 
     return {
       total: {
@@ -493,17 +504,23 @@ export class UsageDB {
    * Bucketed time-series for charts: one point per `bucketMs` interval from
    * `sinceMs` to now, aligned to the bucket boundary, with zero-filled gaps.
    */
-  series(sinceMs: number, bucketMs: number): UsageSeriesPoint[] {
+  series(sinceMs: number, bucketMs: number, filter?: { client_key?: string }): UsageSeriesPoint[] {
     const now = this.now();
     const start = Math.floor(sinceMs / bucketMs) * bucketMs;
+    const clauses = ["ts >= ?"];
+    const params: Array<number | string> = [bucketMs, bucketMs, sinceMs];
+    if (filter?.client_key !== undefined) {
+      clauses.push("client_key = ?");
+      params.push(filter.client_key);
+    }
     const rows = this.db
       .prepare(
         `SELECT CAST(ts / ? AS INTEGER) * ? AS bucket, COUNT(*) requests,
                 COALESCE(SUM(tokens_in),0) tokens_in,
                 COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost
-         FROM usage WHERE ts >= ? GROUP BY bucket ORDER BY bucket`,
+         FROM usage WHERE ${clauses.join(" AND ")} GROUP BY bucket ORDER BY bucket`,
       )
-      .all(bucketMs, bucketMs, sinceMs) as SqlRow[];
+      .all(...params) as SqlRow[];
 
     const byBucket = new Map<number, SqlRow>();
     for (const r of rows) byBucket.set(num(r.bucket), r);
@@ -570,15 +587,23 @@ export class UsageDB {
    * so it's an aggregate SUM here rather than reconstructed from bytes/tokens
    * — the latter would need a single price across possibly many models.
    */
-  savingsSummary(sinceMs = 0): SavingsSummary {
+  savingsSummary(sinceMs = 0, filter?: { client_key?: string }): SavingsSummary {
+    const clauses = ["ts >= ?"];
+    const params: Array<number | string> = [sinceMs];
+    if (filter?.client_key !== undefined) {
+      clauses.push("client_key = ?");
+      params.push(filter.client_key);
+    }
+    const where = clauses.join(" AND ");
+
     const rtk = this.db
       .prepare(
         `SELECT COALESCE(SUM(rtk_bytes_in),0) bytes_in, COALESCE(SUM(rtk_bytes_out),0) bytes_out,
                 COALESCE(SUM(rtk_cost_saved),0) cost_saved,
                 COUNT(*) FILTER (WHERE rtk_bytes_in > 0) hits
-         FROM usage WHERE ts >= ?`,
+         FROM usage WHERE ${where}`,
       )
-      .get(sinceMs) as SqlRow;
+      .get(...params) as SqlRow;
 
     const headroom = this.db
       .prepare(
@@ -586,18 +611,18 @@ export class UsageDB {
                 COALESCE(SUM(headroom_tokens_after),0) tokens_after,
                 COALESCE(SUM(headroom_cost_saved),0) cost_saved,
                 COUNT(*) FILTER (WHERE headroom_tokens_before > 0) hits
-         FROM usage WHERE ts >= ?`,
+         FROM usage WHERE ${where}`,
       )
-      .get(sinceMs) as SqlRow;
+      .get(...params) as SqlRow;
 
     const byLevel = (col: "caveman_level" | "ponytail_level") =>
       (
         this.db
           .prepare(
             `SELECT ${col} level, COUNT(*) requests, COALESCE(AVG(tokens_out),0) avg_tokens_out
-             FROM usage WHERE ts >= ? GROUP BY ${col} ORDER BY ${col}`,
+             FROM usage WHERE ${where} GROUP BY ${col} ORDER BY ${col}`,
           )
-          .all(sinceMs) as SqlRow[]
+          .all(...params) as SqlRow[]
       ).map((r) => ({ level: String(r.level), requests: num(r.requests), avg_tokens_out: num(r.avg_tokens_out) }));
 
     return {

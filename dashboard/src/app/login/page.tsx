@@ -8,11 +8,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
+  const [memberLogin, setMemberLogin] = useState(false);
 
   useEffect(() => {
     fetch("/api/login")
       .then((r) => r.json())
-      .then((d: { isDefault?: boolean }) => setIsDefault(!!d.isDefault))
+      .then((d: { isDefault?: boolean; memberLogin?: boolean }) => {
+        setIsDefault(!!d.isDefault);
+        setMemberLogin(!!d.memberLogin);
+      })
       .catch(() => {});
   }, []);
 
@@ -31,13 +35,9 @@ export default function LoginPage() {
         signal: ctrl.signal,
       });
       if (res.ok) {
-        // Hard navigation, not router.replace()/router.refresh() — the App
-        // Router's client-side cache holds stale redirect-to-login RSC
-        // payloads for every page visited pre-login, and refresh() only
-        // busts the cache for the current route. A full navigation clears
-        // it all, so subsequent Link clicks don't bounce back to /login.
-        // Use replace so Back doesn't return to a dead login form.
-        window.location.replace("/");
+        const body = (await res.json().catch(() => ({}))) as { role?: string };
+        // Members land on Usage; admins on the full console home.
+        window.location.replace(body.role === "member" ? "/usage" : "/");
         return;
       } else {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -45,7 +45,6 @@ export default function LoginPage() {
         setBusy(false);
       }
     } catch {
-      // AbortError (timeout) or TypeError (server crashed / connection refused)
       setError("server not responding — aigloo may have crashed. restart it and try again.");
       setBusy(false);
     } finally {
@@ -55,7 +54,6 @@ export default function LoginPage() {
 
   return (
     <div className="login-split">
-      {/* Left: gradient art panel */}
       <div className="login-art">
         <div className="max-w-md">
           <div className="mb-8 flex items-center gap-3">
@@ -79,22 +77,32 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right: form */}
       <div className="grid place-items-center p-6">
         <form
           onSubmit={submit}
           className="glass-strong w-full max-w-[400px] rounded-brand-xl p-8 shadow-elevated"
         >
           <h1 className="text-[22px] font-bold tracking-tight text-text">Welcome back</h1>
-          <p className="mb-6 mt-1 text-[13px] text-text-muted">Enter the admin password to continue.</p>
+          <p className="mb-6 mt-1 text-[13px] text-text-muted">
+            {memberLogin
+              ? "Admin password for full console, or a gateway access key for your usage only."
+              : "Enter the admin password to continue."}
+          </p>
 
-          <Field label="Password">
-            <Input type="password" value={password} autoFocus onChange={(e) => setPassword(e.target.value)} />
+          <Field label={memberLogin ? "Password or access key" : "Password"}>
+            <Input
+              type="password"
+              value={password}
+              autoFocus
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
           </Field>
 
           {isDefault && (
             <div className="mt-2.5 text-[12px] text-text-subtle">
-              Default password is <code className="text-text">123456</code> — change it in Settings after logging in.
+              Default admin password is <code className="text-text">123456</code>
+              {memberLogin ? " — or paste an access key from the admin." : " — change it in Settings after logging in."}
             </div>
           )}
 
