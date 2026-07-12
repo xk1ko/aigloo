@@ -29,11 +29,11 @@ describe("computeCostOut", () => {
 });
 
 describe("UsageDB.record + summary", () => {
-  it("aggregates totals, by-provider, and by-model", () => {
+  it("aggregates totals, by-provider, by-model, and by-key", () => {
     const d = db();
-    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 100, tokens_out: 50, cached_tokens: 0, cost: 0.5, cost_out: 0.3, status: 200, latency_ms: 120, stream: 0 });
-    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 200, tokens_out: 80, cached_tokens: 0, cost: 1.0, cost_out: 0.6, status: 200, latency_ms: 90, stream: 1 });
-    d.record({ alias: "claude", provider: "an", model: "claude-3", tokens_in: 50, tokens_out: 20, cached_tokens: 10, cost: 0.2, cost_out: 0.15, status: 200, latency_ms: 200, stream: 0 });
+    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 100, tokens_out: 50, cached_tokens: 0, cost: 0.5, cost_out: 0.3, status: 200, latency_ms: 120, stream: 0, client_key: "alice" });
+    d.record({ alias: "smart", provider: "oa", model: "gpt-4o", tokens_in: 200, tokens_out: 80, cached_tokens: 0, cost: 1.0, cost_out: 0.6, status: 200, latency_ms: 90, stream: 1, client_key: "alice" });
+    d.record({ alias: "claude", provider: "an", model: "claude-3", tokens_in: 50, tokens_out: 20, cached_tokens: 10, cost: 0.2, cost_out: 0.15, status: 200, latency_ms: 200, stream: 0, client_key: "bob" });
 
     const s = d.summary();
     expect(s.total.requests).toBe(3);
@@ -49,6 +49,13 @@ describe("UsageDB.record + summary", () => {
 
     const gpt = s.by_model.find((m) => m.model === "gpt-4o")!;
     expect(gpt.requests).toBe(2);
+
+    const alice = s.by_key.find((k) => k.client_key === "alice")!;
+    expect(alice.requests).toBe(2);
+    expect(alice.cost).toBeCloseTo(1.5);
+    const bob = s.by_key.find((k) => k.client_key === "bob")!;
+    expect(bob.requests).toBe(1);
+    expect(bob.cost).toBeCloseTo(0.2);
   });
 
   it("filters the summary by since timestamp", () => {
@@ -146,6 +153,13 @@ describe("UsageDB client_key", () => {
   it("totals filters by client_key", () => {
     expect(seed().totals(0, { client_key: "aaaa1111" }).cost).toBeCloseTo(1);
     expect(seed().totals(0, { client_key: "bbbb2222" }).cost).toBeCloseTo(0.2);
+  });
+
+  it("summary.by_key groups fingerprints", () => {
+    const s = seed().summary();
+    expect(s.by_key).toHaveLength(2);
+    expect(s.by_key[0]!.cost).toBeGreaterThanOrEqual(s.by_key[1]!.cost);
+    expect(s.by_key.map((k) => k.client_key).sort()).toEqual(["aaaa1111", "bbbb2222"]);
   });
   it("record defaults client_key to '' when omitted, excluded from a keyed sum", () => {
     const db = new UsageDB(":memory:");

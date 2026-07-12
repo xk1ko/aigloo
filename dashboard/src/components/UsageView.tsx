@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { AreaChart, type SeriesPoint } from "@/components/AreaChart";
 import { Icon } from "@/components/Icon";
 import { fmt, Empty } from "@/components/ui";
+import { adminApi } from "@/lib/client";
 import type { UsageSummary, SavingsSummary } from "@/lib/gateway";
 
 const PAGE_SIZE = 8;
@@ -38,6 +39,7 @@ export function UsageView() {
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [savings, setSavings] = useState<SavingsSummary | null>(null);
+  const [keyNames, setKeyNames] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -45,10 +47,11 @@ export function UsageView() {
     setLoading(true);
     setError("");
     const since = sinceFor(w.key);
-    const [sumRes, serRes, savRes] = await Promise.all([
+    const [sumRes, serRes, savRes, keysRes] = await Promise.all([
       fetch(`/api/gw/admin/usage?since=${since}`),
       fetch(`/api/gw/admin/usage/series?since=${since}&bucket=${w.bucketMs}`),
       fetch(`/api/gw/admin/savings/summary?since=${since}`),
+      adminApi.keys(),
     ]);
     if (!sumRes.ok) {
       setError("could not load usage");
@@ -59,6 +62,11 @@ export function UsageView() {
     const ser = serRes.ok ? ((await serRes.json()) as { series: SeriesPoint[] }) : { series: [] };
     setSeries(ser.series);
     setSavings(savRes.ok ? ((await savRes.json()) as SavingsSummary) : null);
+    if (keysRes.ok && keysRes.data) {
+      const map: Record<string, string> = {};
+      for (const k of keysRes.data) map[k.fingerprint] = k.name || k.fingerprint.slice(0, 8);
+      setKeyNames(map);
+    }
     setLoading(false);
   }, []);
 
@@ -67,6 +75,24 @@ export function UsageView() {
   }, [win, load]);
 
   const total = summary?.total;
+
+  const byKeyRows = useMemo(() => {
+    const rows = summary?.by_key ?? [];
+    return rows.map((k) => {
+      const fp = k.client_key;
+      const named = fp ? keyNames[fp] : undefined;
+      const label = !fp ? "(no key)" : named ?? (fp.length > 10 ? `${fp.slice(0, 8)}…` : fp);
+      return {
+        label,
+        // Show full fingerprint only when we resolved a friendly name
+        sub: named && fp ? fp : undefined,
+        requests: k.requests,
+        tokens_in: k.tokens_in,
+        tokens_out: k.tokens_out,
+        cost: k.cost,
+      };
+    });
+  }, [summary?.by_key, keyNames]);
 
   return (
     <div>
@@ -119,7 +145,7 @@ export function UsageView() {
             <AreaChart series={series} />
           </div>
 
-          {/* breakdown — horizontal bars */}
+          {/* breakdown — provider / model / access key */}
           <div className="grid gap-3 lg:grid-cols-2">
             <BreakdownPanel
               title="By Provider"
@@ -132,6 +158,16 @@ export function UsageView() {
               icon="model_training"
               rows={summary?.by_model.map((m) => ({ label: m.alias, requests: m.requests, tokens_in: m.tokens_in, tokens_out: m.tokens_out, cost: m.cost })) ?? []}
               loading={loading}
+            />
+          </div>
+
+          <div className="mt-3">
+            <BreakdownPanel
+              title="By Access Key"
+              icon="key"
+              rows={byKeyRows}
+              loading={loading}
+              emptyHint="No key-attributed usage in this window. Requests without a gateway key show as (no key)."
             />
           </div>
 
@@ -291,11 +327,13 @@ function BreakdownPanel({
   icon,
   rows,
   loading,
+  emptyHint,
 }: {
   title: string;
   icon: string;
-  rows: Array<{ label: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
+  rows: Array<{ label: string; sub?: string; requests: number; tokens_in: number; tokens_out: number; cost: number }>;
   loading: boolean;
+  emptyHint?: string;
 }) {
   const [page, setPage] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -326,19 +364,20 @@ function BreakdownPanel({
         style={minH ? { minHeight: minH } : undefined}
       >
         {rows.length === 0 ? (
-          <div className="py-6 text-center text-[13px] text-text-muted">No usage in this window.</div>
+          <div className="py-6 text-center text-[13px] text-text-muted">{emptyHint ?? "No usage in this window."}</div>
         ) : (
           <div className="space-y-2.5">
             {pageRows.map((r, i) => (
-              <div key={`${r.label}-${page}-${i}`} className="group">
+              <div key={`${r.label}-${r.sub ?? ""}-${page}-${i}`} className="group">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[13px] font-medium text-text" title={r.label}>{r.label}</span>
+                  <span className="truncate text-[13px] font-medium text-text" title={r.sub ? `${r.label} · ${r.sub}` : r.label}>{r.label}</span>
                   <span className="tnum flex-none text-[13px] font-semibold text-text">{fmt.cost(r.cost)}</span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-3 tnum text-[11px] text-text-subtle">
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 tnum text-[11px] text-text-subtle">
                   <span>{fmt.int(r.requests)} req</span>
                   <span>in {fmt.compact(r.tokens_in)}</span>
                   <span>out {fmt.compact(r.tokens_out)}</span>
+                  {r.sub ? <span className="font-mono opacity-70" title={r.sub}>{r.sub.slice(0, 12)}…</span> : null}
                 </div>
               </div>
             ))}

@@ -811,6 +811,9 @@ export async function handleAdmin(
     if (!deps.db) return { status: 503, body: { error: "usage tracking disabled" } };
     const cfg = deps.state.config.raw;
     const statuses = deps.state.budget.statuses();
+    // Optional `since` (ms epoch) scopes spend/tokens to a window; default 0 = all-time.
+    const sinceRaw = search.has("since") ? Number(search.get("since")) : 0;
+    const since = Number.isFinite(sinceRaw) ? sinceRaw : 0;
     const keys = cfg.server.api_keys.map((k) => {
       const fp = clientKeyFingerprint(k);
       return buildKeyUsageRow({
@@ -818,11 +821,11 @@ export async function handleAdmin(
         name: cfg.server.key_names?.[k] ?? maskKey(k),
         masked: maskKey(k),
         expires: cfg.server.key_expires?.[k],
-        totals: deps.db!.totals(0, { client_key: fp }),
+        totals: deps.db!.totals(since, { client_key: fp }),
         budget: statuses.find((ss) => ss.scope.type === "key" && ss.scope.id === fp) ?? null,
       });
     });
-    return { status: 200, body: { keys } };
+    return { status: 200, body: { keys, since } };
   }
 
   // ---- headroom ----

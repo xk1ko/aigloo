@@ -296,6 +296,8 @@ export interface UsageSummary {
   total: { requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number };
   by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
   by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
+  /** Per access-key fingerprint; empty client_key = requests with no key attribution. */
+  by_key: Array<{ client_key: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
 }
 export interface UsageSeriesPoint {
   ts: number;

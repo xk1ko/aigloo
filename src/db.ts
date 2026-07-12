@@ -61,6 +61,8 @@ export interface UsageSummary {
   total: { requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number };
   by_provider: Array<{ provider: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
   by_model: Array<{ alias: string; model: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
+  /** Per gateway access-key fingerprint (`client_key`); empty string = unattributed. */
+  by_key: Array<{ client_key: string; requests: number; tokens_in: number; tokens_out: number; cost: number; cost_out: number }>;
 }
 
 export interface UsageSeriesPoint {
@@ -412,6 +414,15 @@ export class UsageDB {
       )
       .all(sinceMs) as SqlRow[];
 
+    const by_key = this.db
+      .prepare(
+        `SELECT client_key, COUNT(*) requests, COALESCE(SUM(tokens_in),0) tokens_in,
+                COALESCE(SUM(tokens_out),0) tokens_out, COALESCE(SUM(cost),0) cost,
+                COALESCE(SUM(cost_out),0) cost_out
+         FROM usage WHERE ts >= ? GROUP BY client_key ORDER BY cost DESC`,
+      )
+      .all(sinceMs) as SqlRow[];
+
     return {
       total: {
         requests: num(total.requests),
@@ -431,6 +442,14 @@ export class UsageDB {
       by_model: by_model.map((r) => ({
         alias: String(r.alias),
         model: String(r.model),
+        requests: num(r.requests),
+        tokens_in: num(r.tokens_in),
+        tokens_out: num(r.tokens_out),
+        cost: num(r.cost),
+        cost_out: num(r.cost_out),
+      })),
+      by_key: by_key.map((r) => ({
+        client_key: String(r.client_key ?? ""),
         requests: num(r.requests),
         tokens_in: num(r.tokens_in),
         tokens_out: num(r.tokens_out),

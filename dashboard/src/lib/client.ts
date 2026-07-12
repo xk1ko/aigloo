@@ -63,7 +63,8 @@ export const adminApi = {
   models: () => api<ModelsPayload>("GET", "/admin/models"),
   capabilities: () => api<CapsTables>("GET", "/admin/capabilities"),
   keys: () => api<Array<{ fingerprint: string; name: string; masked: string }>>("GET", "/admin/keys"),
-  keysUsage: () => api<{ keys: KeyUsageRow[] }>("GET", "/admin/keys/usage"),
+  keysUsage: (since = 0) =>
+    api<{ keys: KeyUsageRow[]; since: number }>("GET", `/admin/keys/usage?since=${since}`),
   savingsSummary: (since = 0) => api<SavingsSummary>("GET", `/admin/savings/summary?since=${since}`),
 
   setBudget: (body: {
