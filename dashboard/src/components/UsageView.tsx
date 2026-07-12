@@ -91,12 +91,20 @@ export function UsageView() {
     const rows = summary?.by_key ?? [];
     return rows.map((k) => {
       const fp = k.client_key;
-      const named = fp ? keyNames[fp] : undefined;
-      const label = !fp ? "(no key)" : named ?? (fp.length > 10 ? `${fp.slice(0, 8)}…` : fp);
+      // Reserved ids: empty = unattributed client; "admin-ping" = dashboard model test
+      if (!fp) {
+        return { label: "(no key)", sub: undefined, requests: k.requests, tokens_in: k.tokens_in, tokens_out: k.tokens_out, cost: k.cost };
+      }
+      if (fp === "admin-ping" || fp === "admin") {
+        // "admin" kept so any rows written before the rename still label cleanly
+        return { label: "admin-ping", sub: "dashboard model test", requests: k.requests, tokens_in: k.tokens_in, tokens_out: k.tokens_out, cost: k.cost };
+      }
+      const named = keyNames[fp];
+      const label = named ?? (fp.length > 10 ? `${fp.slice(0, 8)}…` : fp);
       return {
         label,
         // Show full fingerprint only when we resolved a friendly name
-        sub: named && fp ? fp : undefined,
+        sub: named ? fp : undefined,
         requests: k.requests,
         tokens_in: k.tokens_in,
         tokens_out: k.tokens_out,

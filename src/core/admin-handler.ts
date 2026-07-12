@@ -544,8 +544,10 @@ export async function handleAdmin(
         const provider = deps.state.config.raw.providers.find((p) => p.id === id);
         if (!provider) return { status: 404, body: { error: `provider "${id}" not found` } };
         try {
+          // Attribute dashboard model pings as "admin-ping" so Usage → By Access Key
+          // does not lump them under "(no key)" (no gateway access key on this path).
           await handle(
-            { config: deps.state.config, pool: deps.state.pool, db: deps.db },
+            { config: deps.state.config, pool: deps.state.pool, db: deps.db, clientKeyFp: "admin-ping" },
             "openai",
             { model: `${id}/${modelId}`, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false },
           );
