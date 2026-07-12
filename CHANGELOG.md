@@ -5,6 +5,11 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Token savers sync** — Caveman/Ponytail prompts expanded with shared style rules (auto-clarity, YAGNI ladder, persistence). RTK gains more tool-output detectors/filters (git-log, build-output, smart-truncate, dedup-log, read-numbered, search-list), Windows-friendly path detection, array tool content, and size gates. Pipeline order is now RTK → Headroom → inject so Headroom cannot drop style prompts
+
 ## [1.2.1] — 2026-07-12
 
 ### Added

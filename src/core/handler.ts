@@ -275,10 +275,9 @@ export async function handle(
     routes = eligible;
   }
 
-  // Pipeline order matters: RTK compresses tool_result in the INPUT first, then
-  // inject prepends the output-style system prompt. They touch different parts
-  // of the request and stack cleanly. Both run before routing so every fallback
-  // attempt sends the same transformed request.
+  // Pipeline: RTK (input tool dumps) → Headroom (context) → inject (output style).
+  // Inject runs last so Headroom cannot rewrite/drop the gateway system prompt.
+  // All run before routing so every fallback attempt sees the same request.
   const savers: SaverStats = {
     rtkBytesIn: 0,
     rtkBytesOut: 0,
@@ -300,20 +299,7 @@ export async function handle(
     }
   }
 
-  // fail-open: an injection error must never break the request.
-  try {
-    const injected = injectInto(canonical, {
-      caveman: config.endpoint.caveman,
-      ponytail: config.endpoint.ponytail,
-    });
-    if (injected) deps.log?.(`[inject] caveman=${config.endpoint.caveman} ponytail=${config.endpoint.ponytail}`);
-  } catch (e) {
-    deps.log?.(`[inject] skipped (error): ${(e as Error).message}`);
-  }
-
-  // Headroom: pipe the (OpenAI-shaped) messages through the external compression
-  // proxy when enabled. Fail-open — on any error the original messages stand and
-  // the request proceeds. Runs after RTK/inject so it compresses the final context.
+  // Headroom: external compression; fail-open. After RTK, before style inject.
   if (config.endpoint.headroom.enabled) {
     const hr = await compressWithHeadroom(canonical.messages, {
       url: config.endpoint.headroom.url,
@@ -327,6 +313,17 @@ export async function handle(
       savers.headroomTokensBefore = hr.tokens_before ?? 0;
       savers.headroomTokensAfter = hr.tokens_after ?? 0;
     }
+  }
+
+  // fail-open: an injection error must never break the request.
+  try {
+    const injected = injectInto(canonical, {
+      caveman: config.endpoint.caveman,
+      ponytail: config.endpoint.ponytail,
+    });
+    if (injected) deps.log?.(`[inject] caveman=${config.endpoint.caveman} ponytail=${config.endpoint.ponytail}`);
+  } catch (e) {
+    deps.log?.(`[inject] skipped (error): ${(e as Error).message}`);
   }
 
   const wantStream = canonical.stream === true;

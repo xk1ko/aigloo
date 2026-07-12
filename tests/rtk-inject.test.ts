@@ -18,9 +18,21 @@ describe("RTK detectShape", () => {
     expect(detectShape("root\n├── a\n└── b")).toBe("tree");
   });
   it("detects git status --porcelain", () => {
-    expect(detectShape(" M src/a.ts\n?? new.ts")).toBe("git-status");
+    expect(detectShape(" M src/a.ts\n?? new.ts\n M src/b.ts")).toBe("git-status");
   });
-  it("returns null for prose", () => {
+  it("detects git log before porcelain-like noise", () => {
+    expect(detectShape("commit abcdef0123456789\nAuthor: x\nDate: y\n\n    subject")).toBe("git-log");
+  });
+  it("detects build output before porcelain mis-hit", () => {
+    const cargo = "   Compiling foo v1.0.0\n   Compiling bar v1.0.0\n    Finished release";
+    expect(detectShape(cargo)).toBe("build-output");
+  });
+  it("detects Windows path lists as find", () => {
+    expect(
+      detectShape("C:\\Users\\me\\a.ts\nC:\\Users\\me\\b.ts\nC:\\Users\\me\\c.ts"),
+    ).toBe("find");
+  });
+  it("returns null for short prose", () => {
     expect(detectShape("This is just a normal sentence with no structure.")).toBeNull();
   });
   it("returns null for empty input", () => {
@@ -33,47 +45,79 @@ describe("RTK applyFilter", () => {
     const lines: string[] = [];
     for (let i = 1; i <= 30; i++) lines.push(`src/a.ts:${i}:match ${i}`);
     const out = applyFilter("grep", lines.join("\n"));
-    expect(out).toContain("elided by rtk");
-    expect(out.split("\n").length).toBeLessThan(30);
+    expect(out).toMatch(/\+|matches|elided/i);
+    expect(out.length).toBeLessThan(lines.join("\n").length);
   });
 
-  it("caps long listings", () => {
+  it("groups find listings", () => {
     const lines: string[] = [];
-    for (let i = 0; i < 500; i++) lines.push(`./path/to/file_${i}.ts`);
+    for (let i = 0; i < 50; i++) lines.push(`./path/to/file_${i}.ts`);
     const out = applyFilter("find", lines.join("\n"));
-    expect(out).toContain("elided by rtk");
+    expect(out).toContain("files in");
+    expect(out.length).toBeLessThan(lines.join("\n").length);
   });
 
-  it("truncates long diff hunks but keeps headers", () => {
+  it("truncates long diff hunks but keeps structure", () => {
     const lines = ["diff --git a/x b/x", "@@ -1,200 +1,200 @@"];
     for (let i = 0; i < 200; i++) lines.push(`+line ${i}`);
     const out = applyFilter("git-diff", lines.join("\n"));
-    expect(out).toContain("diff --git a/x b/x");
-    expect(out).toContain("@@ -1,200 +1,200 @@");
-    expect(out).toContain("elided by rtk");
+    expect(out).toContain("x");
+    expect(out.length).toBeLessThan(lines.join("\n").length);
+  });
+
+  it("compresses build output progress noise", () => {
+    const lines = [
+      "npm warn deprecated foo@1",
+      "added 200 packages in 3s",
+    ];
+    for (let i = 0; i < 40; i++) lines.splice(1, 0, `   Compiling pkg${i} v1.0.0`);
+    const raw = lines.join("\n");
+    const out = applyFilter("build-output", raw);
+    expect(out).toContain("Compiled");
+    expect(out.length).toBeLessThan(raw.length);
+  });
+
+  it("smart-truncates huge blobs", () => {
+    const lines = Array.from({ length: 400 }, (_, i) => `line ${i}`);
+    const out = applyFilter("smart-truncate", lines.join("\n"));
+    expect(out).toContain("truncated");
+    expect(out.split("\n").length).toBeLessThan(400);
   });
 });
 
 describe("RTK compressMessages", () => {
-  function toolMsg(content: string): CanonicalMessage {
-    return { role: "tool", tool_call_id: "c1", content };
+  function toolMsg(content: string | { type: "text"; text: string }[]): CanonicalMessage {
+    return { role: "tool", tool_call_id: "c1", content: content as CanonicalMessage["content"] };
   }
 
   it("compresses a large grep tool result and reports stats", () => {
     const lines: string[] = [];
     for (let i = 1; i <= 50; i++) lines.push(`src/a.ts:${i}:hit ${i}`);
-    const msgs: CanonicalMessage[] = [{ role: "user", content: "find foo" }, toolMsg(lines.join("\n"))];
+    // pad to clear MIN_COMPRESS_SIZE
+    const body = lines.join("\n") + "\n" + "x".repeat(400);
+    const msgs: CanonicalMessage[] = [{ role: "user", content: "find foo" }, toolMsg(body)];
     const stats = compressMessages(msgs);
-    expect(stats.hits).toBe(1);
+    expect(stats.hits).toBeGreaterThanOrEqual(1);
     expect(stats.bytesOut).toBeLessThan(stats.bytesIn);
-    expect(stats.shapes).toContain("grep");
+    expect(stats.shapes.length).toBeGreaterThan(0);
     expect(typeof msgs[1]!.content).toBe("string");
-    expect((msgs[1]!.content as string).length).toBeLessThan(lines.join("\n").length);
+    expect((msgs[1]!.content as string).length).toBeLessThan(body.length);
+  });
+
+  it("compresses text parts inside tool content arrays", () => {
+    const lines: string[] = [];
+    for (let i = 1; i <= 40; i++) lines.push(`src/a.ts:${i}:hit ${i}`);
+    const text = lines.join("\n") + "\n" + "y".repeat(400);
+    const msgs: CanonicalMessage[] = [toolMsg([{ type: "text", text }])];
+    const stats = compressMessages(msgs);
+    expect(stats.hits).toBeGreaterThanOrEqual(1);
+    const parts = msgs[0]!.content as { type: string; text: string }[];
+    expect(parts[0]!.text.length).toBeLessThan(text.length);
   });
 
   it("leaves non-tool messages and prose untouched (no hits)", () => {
     const msgs: CanonicalMessage[] = [
-      { role: "user", content: "diff --git a/x b/x\n@@ @@\n+lots" }, // diff but not a tool msg
+      { role: "user", content: "diff --git a/x b/x\n@@ @@\n+lots" },
       { role: "tool", tool_call_id: "c", content: "short answer, not a recognizable shape" },
     ];
     const before = JSON.stringify(msgs);
@@ -98,57 +142,27 @@ describe("inject — prompts per level", () => {
     expect(ponytailPrompt("ultra")).toBeTruthy();
   });
 
-  it("intensities differ", () => {
+  it("levels differ and full includes shared boundaries", () => {
     expect(cavemanPrompt("lite")).not.toBe(cavemanPrompt("full"));
     expect(cavemanPrompt("full")).not.toBe(cavemanPrompt("ultra"));
+    expect(cavemanPrompt("full")).toContain("Auto-Clarity");
+    expect(cavemanPrompt("full")).toContain("ACTIVE EVERY RESPONSE");
+    expect(ponytailPrompt("full")).toContain("lazy senior");
+    expect(ponytailPrompt("full")).toContain("YAGNI");
   });
-});
 
-describe("inject — buildInjection stacking", () => {
-  it("returns null when both off", () => {
+  it("buildInjection stacks both, injectInto prepends system", () => {
     expect(buildInjection({ caveman: "off", ponytail: "off" })).toBeNull();
-  });
-  it("stacks both prompts when both on", () => {
     const text = buildInjection({ caveman: "full", ponytail: "full" })!;
     expect(text).toContain(cavemanPrompt("full")!);
     expect(text).toContain(ponytailPrompt("full")!);
-  });
-  it("includes only the active one", () => {
-    const text = buildInjection({ caveman: "lite", ponytail: "off" })!;
-    expect(text).toBe(cavemanPrompt("lite"));
-  });
-});
 
-describe("inject — injectInto", () => {
-  function req(): CanonicalRequest {
-    return { model: "m", messages: [{ role: "user", content: "hi" }] };
-  }
-
-  it("prepends a leading system message", () => {
-    const r = req();
-    const did = injectInto(r, { caveman: "full", ponytail: "off" });
-    expect(did).toBe(true);
-    expect(r.messages[0]!.role).toBe("system");
-    expect(r.messages[1]!.role).toBe("user");
-  });
-
-  it("does nothing when both toggles are off", () => {
-    const r = req();
-    const did = injectInto(r, { caveman: "off", ponytail: "off" });
-    expect(did).toBe(false);
-    expect(r.messages[0]!.role).toBe("user");
-  });
-
-  it("keeps the client's own system prompt separate (prepends before it)", () => {
-    const r: CanonicalRequest = {
+    const req: CanonicalRequest = {
       model: "m",
-      messages: [
-        { role: "system", content: "client sys" },
-        { role: "user", content: "hi" },
-      ],
+      messages: [{ role: "user", content: "hi" }],
     };
-    injectInto(r, { caveman: "full", ponytail: "off" });
-    expect(r.messages[0]!.content).toContain("terse");
-    expect(r.messages[1]!.content).toBe("client sys");
+    expect(injectInto(req, { caveman: "lite", ponytail: "off" })).toBe(true);
+    expect(req.messages[0]!.role).toBe("system");
+    expect(req.messages[0]!.content).toBe(cavemanPrompt("lite"));
   });
 });

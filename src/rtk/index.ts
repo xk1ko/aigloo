@@ -10,9 +10,10 @@
  * smaller than the original. A detector/filter that throws is swallowed and the
  * original text kept — RTK must never break a request.
  */
-import type { CanonicalMessage } from "../core/canonical.js";
-import { detectShape } from "./detect.js";
-import { applyFilter } from "./filters.js";
+import type { CanonicalContentPart, CanonicalMessage } from "../core/canonical.js";
+import { MIN_COMPRESS_SIZE, RAW_CAP } from "./constants.js";
+import { autoDetectFilter } from "./autodetect.js";
+import { safeApply } from "./applyFilter.js";
 
 export interface RtkStats {
   /** number of tool outputs compressed */
@@ -23,36 +24,51 @@ export interface RtkStats {
 }
 
 function compressText(text: string, stats: RtkStats): string {
-  let filtered: string;
+  const bytesIn = text.length;
+  if (bytesIn < MIN_COMPRESS_SIZE || bytesIn > RAW_CAP) return text;
+
   try {
-    const shape = detectShape(text);
-    if (!shape) return text;
-    filtered = applyFilter(shape, text);
-    // safety: never blank the content, never grow it
-    if (!filtered || filtered.length >= text.length) return text;
+    const fn = autoDetectFilter(text);
+    if (!fn) return text;
+    const filtered = safeApply(fn, text);
+    if (!filtered || filtered.length === 0 || filtered.length >= bytesIn) return text;
 
     stats.hits++;
-    stats.bytesIn += text.length;
+    stats.bytesIn += bytesIn;
     stats.bytesOut += filtered.length;
-    stats.shapes.push(shape);
+    stats.shapes.push(fn.filterName || fn.name || "filter");
     return filtered;
   } catch {
-    // fail-open: a buggy filter must not break the request
     return text;
   }
 }
 
+function compressContent(
+  content: string | CanonicalContentPart[] | null | undefined,
+  stats: RtkStats,
+): string | CanonicalContentPart[] | null | undefined {
+  if (typeof content === "string") return compressText(content, stats);
+  if (!Array.isArray(content)) return content;
+  return content.map((part) => {
+    if (part && part.type === "text" && typeof part.text === "string") {
+      return { ...part, text: compressText(part.text, stats) };
+    }
+    return part;
+  });
+}
+
 /**
  * Compress tool-output content in place. Returns stats (hits=0 when nothing was
- * compressible). Only touches role="tool" messages with string content.
+ * compressible). Touches role="tool" messages with string or text-part content.
  */
 export function compressMessages(messages: CanonicalMessage[]): RtkStats {
   const stats: RtkStats = { hits: 0, bytesIn: 0, bytesOut: 0, shapes: [] };
   for (const msg of messages) {
     if (msg.role !== "tool") continue;
-    if (typeof msg.content === "string") {
-      msg.content = compressText(msg.content, stats);
-    }
+    msg.content = compressContent(msg.content, stats) as CanonicalMessage["content"];
   }
   return stats;
 }
+
+export { detectShape } from "./autodetect.js";
+export { applyFilter } from "./filters.js";

@@ -226,9 +226,9 @@ A **combo** is a `models` entry — an alias routed to a provider chain. Strateg
 
 | Saver | What it does | Source | Install |
 |-------|-------------|--------|---------|
-| **RTK** | Compresses bulky `tool_result` blocks (git/grep/ls) | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | built-in |
-| **Caveman** | Terse system prompt — cuts output prose | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | built-in |
-| **Ponytail** | Nudges minimal code (YAGNI, deletion) | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) | built-in |
+| **RTK** | Compresses bulky `tool_result` blocks (git/grep/ls/build logs, …) | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | built-in port (updated with aigloo releases) |
+| **Caveman** | Terse system prompt — cuts output prose | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | built-in port (updated with aigloo releases) |
+| **Ponytail** | Nudges minimal code (YAGNI, deletion) | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) | built-in port (updated with aigloo releases) |
 | **Headroom** | Pipes context through `/v1/compress` | [chopratejas/headroom](https://github.com/chopratejas/headroom) | **external** |
 
 Headroom is the only external dependency — install from [chopratejas/headroom](https://github.com/chopratejas/headroom) (Python ≥ 3.10), run `headroom proxy`. Without it the toggle stays off; everything else works.
