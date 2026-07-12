@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-07-12
+
+### Added
+- **Login tabs** — Admin password vs Access key on the login page (clearer than one mixed field)
+- **Member block reasons** — Expired key, exhausted spend cap, and near-limit warnings on the access card
+- **Member CLI Tools** — Members get CLI Tools nav; auto-detect/apply on the aigloo host with **their** key and **allowed models** only (no other keys)
+- **Lifetime spend cap** — Budget window `lifetime` (never refills; all-time spend). Available on Budgets and key Edit scope
+- **Admin activity log** — Settings → Activity records logins, key create/remove/scope, and password changes (`GET /admin/audit`)
+
 ## [1.2.0] — 2026-07-12
 
 ### Added
@@ -777,7 +786,8 @@ dashboard.
   installs dashboard deps, builds the dashboard).
 - Brand: `a»` mark (favicon + sidebar) and an `ai»getwey` wordmark.
 
-[Unreleased]: https://github.com/xk1ko/aigloo/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/xk1ko/aigloo/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/xk1ko/aigloo/releases/tag/v1.2.1
 [1.2.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.2.0
 [1.0.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.0.0
 [aigetwey 1.5.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.5.0

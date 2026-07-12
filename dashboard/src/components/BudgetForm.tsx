@@ -7,9 +7,13 @@ import { Icon } from "@/components/Icon";
 import { ModelPicker, type ModelGroup } from "@/components/ModelPicker";
 import type { BudgetStatus, ModelsPayload } from "@/lib/gateway";
 
-const WINDOWS = ["5h", "24h", "7day", "30day"] as const;
+const WINDOWS = ["5h", "24h", "7day", "30day", "lifetime"] as const;
 const WINDOW_LABELS: Record<string, string> = {
-  "5h": "5H", "24h": "24H", "7day": "7D", "30day": "30D",
+  "5h": "5H",
+  "24h": "24H",
+  "7day": "7D",
+  "30day": "30D",
+  lifetime: "Lifetime",
 };
 type ScopeType = "global" | "provider" | "model";
 
@@ -196,7 +200,15 @@ export function BudgetForm({
         <Group label="Window">
           <div className="flex flex-wrap items-center gap-2">
             {WINDOWS.map((w) => (
-              <button key={w} type="button" onClick={() => { setWindow(w); setCustomWindow(""); }} className={pill(window === w && !customWindow)}>{WINDOW_LABELS[w]}</button>
+              <button
+                key={w}
+                type="button"
+                onClick={() => { setWindow(w); setCustomWindow(""); }}
+                className={pill(window === w && !customWindow)}
+                title={w === "lifetime" ? "One-shot total — never refills" : undefined}
+              >
+                {WINDOW_LABELS[w]}
+              </button>
             ))}
             <input
               value={customWindow}

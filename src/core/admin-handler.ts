@@ -775,31 +775,52 @@ export async function handleAdmin(
 
   if (m === "POST" && s.length === 2 && s[0] === "endpoint" && s[1] === "keys") {
     if (!b.key) return { status: 400, body: { error: "key required" } };
-    return applyMutation(deps, (c) => addServerKey(c, b.key as string, b.name as string | undefined));
+    const name = b.name as string | undefined;
+    const result = applyMutation(deps, (c) => addServerKey(c, b.key as string, name));
+    if (result.status < 300) deps.db?.logAudit("key.add", "admin", name?.trim() || "unnamed");
+    return result;
   }
 
   if (m === "PUT" && s.length === 3 && s[0] === "endpoint" && s[1] === "keys") {
     const i = Number(s[2]);
     if (!Number.isInteger(i)) return { status: 400, body: { error: "index must be an integer" } };
-    return applyMutation(deps, (c) => editServerKey(c, i, { name: b.name as string | undefined }));
+    const name = b.name as string | undefined;
+    const result = applyMutation(deps, (c) => editServerKey(c, i, { name }));
+    if (result.status < 300) deps.db?.logAudit("key.rename", "admin", name?.trim() || `index ${i}`);
+    return result;
   }
 
   if (m === "PUT" && s.length === 4 && s[0] === "endpoint" && s[1] === "keys" && s[3] === "scope") {
     const i = Number(s[2]);
     if (!Number.isInteger(i)) return { status: 400, body: { error: "index must be an integer" } };
-    return applyMutation(deps, (c) =>
+    const result = applyMutation(deps, (c) =>
       setServerKeyScope(c, i, {
         models: b.models as string[] | undefined,
         rpm: b.rpm as number | null | undefined,
         expires: b.expires as number | null | undefined,
       }),
     );
+    if (result.status < 300) deps.db?.logAudit("key.scope", "admin", `index ${i}`);
+    return result;
   }
 
   if (m === "DELETE" && s.length === 3 && s[0] === "endpoint" && s[1] === "keys") {
     const i = Number(s[2]);
     if (!Number.isInteger(i)) return { status: 400, body: { error: "index must be an integer" } };
-    return applyMutation(deps, (c) => removeServerKey(c, i));
+    const label = deps.state.config.raw.server.api_keys[i]
+      ? (deps.state.config.raw.server.key_names?.[deps.state.config.raw.server.api_keys[i]!] ?? `index ${i}`)
+      : `index ${i}`;
+    const result = applyMutation(deps, (c) => removeServerKey(c, i));
+    if (result.status < 300) deps.db?.logAudit("key.remove", "admin", String(label));
+    return result;
+  }
+
+  // ---- audit ----
+  if (m === "GET" && s.length === 1 && s[0] === "audit") {
+    if (!deps.db) return { status: 503, body: { error: "audit store unavailable" } };
+    const limitRaw = search.has("limit") ? Number(search.get("limit")) : 100;
+    const limit = Number.isFinite(limitRaw) ? limitRaw : 100;
+    return { status: 200, body: { events: deps.db.recentAudit(limit) } };
   }
 
   if (m === "GET" && s.length === 4 && s[0] === "endpoint" && s[1] === "keys" && s[3] === "reveal") {

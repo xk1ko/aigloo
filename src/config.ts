@@ -129,10 +129,20 @@ const BudgetScopeSchema = z.discriminatedUnion("type", [
 
 // rolling windows replaced the old calendar windows; coerce any legacy value so
 // existing config.yaml budgets keep loading (daily→24h, weekly→7day, monthly→30day).
-const LEGACY_WINDOW: Record<string, string> = { daily: "24h", weekly: "7day", monthly: "30day" };
+// "lifetime" / "total" = one-shot cap that never refills (all-time spend).
+const LEGACY_WINDOW: Record<string, string> = {
+  daily: "24h",
+  weekly: "7day",
+  monthly: "30day",
+  total: "lifetime",
+  once: "lifetime",
+};
 const WindowSchema = z.preprocess(
   (v) => (typeof v === "string" && v in LEGACY_WINDOW ? LEGACY_WINDOW[v] : v),
-  z.string().regex(/^\d+(h|day)$/, "window must be like 5h, 24h, 7day, 30day"),
+  z.string().refine(
+    (s) => s === "lifetime" || /^\d+(h|day)$/.test(s),
+    { message: "window must be like 5h, 24h, 7day, 30day, or lifetime" },
+  ),
 );
 
 const BudgetSchema = z.object({

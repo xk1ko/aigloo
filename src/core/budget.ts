@@ -8,7 +8,7 @@
  */
 import type { Budget, BudgetScope } from "../config.js";
 import { budgetKey } from "../config.js";
-import { currentWindowStart, nextResetAt } from "./window.js";
+import { currentWindowStart, nextResetAt, isLifetimeWindow } from "./window.js";
 
 export interface BudgetStatus {
   scope: BudgetScope;
@@ -23,9 +23,12 @@ export interface BudgetStatus {
   alert_at: number;
   exhausted: boolean;
   est_converse: number | null;
+  /** 0 when window is lifetime (never refills). */
   reset_in_ms: number;
   window_start: number;
   window: Budget["window"];
+  /** True when this budget never resets (all-time spend). */
+  lifetime: boolean;
 }
 
 interface TotalsReader {
@@ -99,6 +102,7 @@ export class BudgetTracker {
   }
 
   private compute(spec: Budget, t: number): BudgetStatus {
+    const lifetime = isLifetimeWindow(spec.window);
     const windowStart = currentWindowStart(spec, t);
     const total = this.db.totals(windowStart, scopeFilter(spec.scope));
     const tokens = total.tokens_in + total.tokens_out;
@@ -123,9 +127,10 @@ export class BudgetTracker {
       alert_at: alertAt,
       exhausted: spent >= limit,
       est_converse,
-      reset_in_ms: Math.max(0, nextResetAt(spec, windowStart) - t),
+      reset_in_ms: lifetime ? 0 : Math.max(0, nextResetAt(spec, windowStart) - t),
       window_start: windowStart,
-      window: spec.window,
+      window: lifetime ? "lifetime" : spec.window,
+      lifetime,
     };
   }
 

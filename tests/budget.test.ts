@@ -147,4 +147,25 @@ describe("BudgetTracker (scoped)", () => {
     const noNote = new BudgetTracker(() => [B({ scope: { type: "global" }, unit: "usd", limit: 10 })], fakeDb(() => ({ tokens_in: 0, tokens_out: 0, cost: 0 })), () => 0);
     expect(noNote.statuses()[0]!.note).toBeUndefined();
   });
+
+  it("lifetime window is all-time and never resets", () => {
+    let lastSince: number | undefined;
+    const t = new BudgetTracker(
+      () => [B({ scope: { type: "global" }, unit: "usd", limit: 50, window: "lifetime" })],
+      {
+        totals(since: number) {
+          lastSince = since;
+          return { tokens_in: 0, tokens_out: 0, cost: 12 };
+        },
+      },
+      () => 1_000_000,
+    );
+    const s = t.statuses()[0]!;
+    expect(lastSince).toBe(0);
+    expect(s.lifetime).toBe(true);
+    expect(s.window).toBe("lifetime");
+    expect(s.reset_in_ms).toBe(0);
+    expect(s.spent).toBe(12);
+    expect(s.exhausted).toBe(false);
+  });
 });

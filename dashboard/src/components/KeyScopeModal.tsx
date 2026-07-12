@@ -160,17 +160,30 @@ export function KeyScopeModal({ keyIndex, k, fingerprint, groups, keyBudget, onC
             <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-subtle">Spend cap (USD)</div>
             <Input inputMode="decimal" value={scopeLimit} onChange={(e) => setScopeLimit(e.target.value.replace(/[^\d.]/g, ""))} placeholder="USD (blank = no cap)" />
             {scopeLimit && (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-text-subtle">resets every</span>
-                {(["5h", "24h", "7day", "30day"] as const).map((w) => (
-                  <button key={w} type="button" onClick={() => { setScopeWindow(w); setScopeCustomWindow(""); }} className={pill(scopeWindow === w && !scopeCustomWindow)}>{w}</button>
-                ))}
-                <input
-                  value={scopeCustomWindow}
-                  onChange={(e) => { setScopeCustomWindow(e.target.value); setScopeWindow(""); }}
-                  placeholder="custom"
-                  className="w-16 rounded-brand border border-border bg-bg px-2 py-1 text-[13px] text-text placeholder:text-text-subtle focus:border-accent focus:outline-none"
-                />
+              <div className="mt-1.5 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-text-subtle">window</span>
+                  {(["5h", "24h", "7day", "30day", "lifetime"] as const).map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => { setScopeWindow(w); setScopeCustomWindow(""); }}
+                      className={pill(scopeWindow === w && !scopeCustomWindow)}
+                      title={w === "lifetime" ? "One-shot total — never refills" : `Resets every ${w}`}
+                    >
+                      {w === "lifetime" ? "never refills" : w}
+                    </button>
+                  ))}
+                  <input
+                    value={scopeCustomWindow}
+                    onChange={(e) => { setScopeCustomWindow(e.target.value); setScopeWindow(""); }}
+                    placeholder="custom"
+                    className="w-16 rounded-brand border border-border bg-bg px-2 py-1 text-[13px] text-text placeholder:text-text-subtle focus:border-accent focus:outline-none"
+                  />
+                </div>
+                {scopeWindow === "lifetime" && !scopeCustomWindow && (
+                  <p className="text-[11px] text-text-subtle">Lifetime cap: all-time spend until the key is removed or the cap is raised.</p>
+                )}
               </div>
             )}
           </div>

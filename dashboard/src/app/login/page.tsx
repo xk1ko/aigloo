@@ -3,7 +3,10 @@
 import { useState, useEffect } from "react";
 import { Button, Input, Field } from "@/components/Button";
 
+type LoginMode = "admin" | "key";
+
 export default function LoginPage() {
+  const [mode, setMode] = useState<LoginMode>("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,12 +39,33 @@ export default function LoginPage() {
       });
       if (res.ok) {
         const body = (await res.json().catch(() => ({}))) as { role?: string };
-        // Members land on Usage; admins on the full console home.
+        // Prefer the role the server issued — admin password always wins if it matches.
+        if (mode === "key" && body.role === "admin") {
+          setError("That looks like the admin password. Switch to Admin, or use a gateway access key.");
+          setBusy(false);
+          return;
+        }
+        if (mode === "admin" && body.role === "member") {
+          setError("That is an access key. Switch to Access key for usage-only login.");
+          setBusy(false);
+          return;
+        }
+        // Keep the key in this browser only so CLI Tools can auto-apply without re-paste.
+        try {
+          if (body.role === "member") sessionStorage.setItem("aigloo_member_key", password);
+          else sessionStorage.removeItem("aigloo_member_key");
+        } catch {
+          /* private mode */
+        }
         window.location.replace(body.role === "member" ? "/usage" : "/");
         return;
       } else {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? `login failed (${res.status})`);
+        setError(
+          body.error ??
+            (mode === "key" ? "invalid access key" : "wrong password") +
+              ` (${res.status})`,
+        );
         setBusy(false);
       }
     } catch {
@@ -51,6 +75,22 @@ export default function LoginPage() {
       clearTimeout(timer);
     }
   }
+
+  const tab = (id: LoginMode, label: string) => (
+    <button
+      type="button"
+      onClick={() => {
+        setMode(id);
+        setError("");
+        setPassword("");
+      }}
+      className={`flex-1 rounded-brand px-3 py-2 text-[13px] font-medium transition-colors ${
+        mode === id ? "bg-accent text-accent-ink" : "text-text-muted hover:text-text"
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div className="login-split">
@@ -83,26 +123,39 @@ export default function LoginPage() {
           className="glass-strong w-full max-w-[400px] rounded-brand-xl p-8 shadow-elevated"
         >
           <h1 className="text-[22px] font-bold tracking-tight text-text">Welcome back</h1>
-          <p className="mb-6 mt-1 text-[13px] text-text-muted">
-            {memberLogin
-              ? "Admin password for full console, or a gateway access key for your usage only."
-              : "Enter the admin password to continue."}
+          <p className="mb-4 mt-1 text-[13px] text-text-muted">
+            {mode === "admin"
+              ? "Full console — providers, keys, budgets, settings."
+              : "Usage only — your spend and limits for the key you were given."}
           </p>
 
-          <Field label={memberLogin ? "Password or access key" : "Password"}>
+          {memberLogin && (
+            <div className="mb-5 flex gap-1 rounded-full bg-surface-2 p-1">
+              {tab("admin", "Admin")}
+              {tab("key", "Access key")}
+            </div>
+          )}
+
+          <Field label={mode === "key" ? "Access key" : "Password"}>
             <Input
               type="password"
               value={password}
               autoFocus
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
+              autoComplete={mode === "key" ? "off" : "current-password"}
+              placeholder={mode === "key" ? "aig-…" : undefined}
             />
           </Field>
 
-          {isDefault && (
+          {mode === "admin" && isDefault && (
             <div className="mt-2.5 text-[12px] text-text-subtle">
               Default admin password is <code className="text-text">123456</code>
-              {memberLogin ? " — or paste an access key from the admin." : " — change it in Settings after logging in."}
+              {" — change it in Settings after logging in."}
+            </div>
+          )}
+          {mode === "key" && (
+            <div className="mt-2.5 text-[12px] text-text-subtle">
+              Paste the gateway key from your admin. Same key you use in Claude Code / Cursor.
             </div>
           )}
 

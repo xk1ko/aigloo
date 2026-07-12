@@ -14,6 +14,7 @@ export interface KeyBudgetView {
   reset_in_ms: number;
   exhausted: boolean;
   alert: boolean;
+  lifetime?: boolean;
 }
 
 export interface KeyUsageRow {
@@ -43,7 +44,17 @@ export function buildKeyUsageRow(input: {
     spent: input.totals.cost,
     tokens: input.totals.tokens_in + input.totals.tokens_out,
     budget: b
-      ? { unit: b.unit, limit: b.limit, spent: b.spent, pct: b.pct, window: b.window, reset_in_ms: b.reset_in_ms, exhausted: b.exhausted, alert: b.alert }
+      ? {
+          unit: b.unit,
+          limit: b.limit,
+          spent: b.spent,
+          pct: b.pct,
+          window: b.window,
+          reset_in_ms: b.reset_in_ms,
+          exhausted: b.exhausted,
+          alert: b.alert,
+          lifetime: b.lifetime,
+        }
       : null,
   };
 }

@@ -24,6 +24,7 @@ const SYSTEM: NavItem[] = [
 
 const MEMBER_NAV: NavItem[] = [
   { href: "/usage", label: "Usage", icon: "bar_chart" },
+  { href: "/tools", label: "CLI Tools", icon: "terminal" },
 ];
 
 export function Sidebar() {
@@ -41,6 +42,11 @@ export function Sidebar() {
   }, []);
 
   async function logout() {
+    try {
+      sessionStorage.removeItem("aigloo_member_key");
+    } catch {
+      /* ignore */
+    }
     await fetch("/api/logout", { method: "POST" });
     window.location.href = "/login";
   }
@@ -92,8 +98,9 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Member key name lives on Usage (MemberAccessCard) — rail is too narrow for labels */}
-      <button onClick={logout} className="nav-isle mt-auto" data-label="Disconnect">
+      {/* Separate disconnect from nav — mt-auto is a no-op on the short floating rail */}
+      <div className="nav-isle-divider nav-isle-divider-logout" />
+      <button onClick={logout} className="nav-isle" data-label="Disconnect">
         <Icon name="logout" size={19} />
       </button>
     </aside>

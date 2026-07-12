@@ -12,7 +12,11 @@ import { Icon } from "@/components/Icon";
 import type { BudgetStatus, KeyUsageRow } from "@/lib/gateway";
 
 const WINDOW_LABELS: Record<string, string> = {
-  "5h": "5H", "24h": "24H", "7day": "7D", "30day": "30D",
+  "5h": "5H",
+  "24h": "24H",
+  "7day": "7D",
+  "30day": "30D",
+  lifetime: "lifetime",
 };
 
 function windowLabel(w: string): string {

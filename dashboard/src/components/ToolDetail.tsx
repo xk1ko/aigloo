@@ -51,6 +51,8 @@ export function ToolDetail({ id }: { id: string }) {
   const [picked, setPicked] = useState<string[]>([]); // openai tools: chosen models
   const [active, setActive] = useState(""); // openai tools: default/active model
   const [slots, setSlots] = useState({ opus: "", sonnet: "", haiku: "" }); // claude
+  const [isMember, setIsMember] = useState(false);
+  const [memberName, setMemberName] = useState("");
   const isAnthropic = tool?.format === "anthropic";
 
   function togglePicked(v: string) {
@@ -135,6 +137,57 @@ export function ToolDetail({ id }: { id: string }) {
 
   useEffect(() => {
     void (async () => {
+      const meRes = await fetch("/api/me", { credentials: "same-origin" });
+      const me = meRes.ok ? ((await meRes.json()) as {
+        role?: string;
+        name?: string;
+        port?: number;
+        catalog?: string[];
+        catalog_groups?: ModelGroup[];
+      }) : null;
+
+      if (me?.role === "member") {
+        setIsMember(true);
+        setMemberName(me.name ?? "Access key");
+        const port = me.port ?? 18080;
+        setEp({
+          port,
+          keys: [{ key: "••••", name: me.name ?? "Your key", fingerprint: "" }],
+          rtk: false,
+          caveman: "off",
+          ponytail: "off",
+          headroom: { enabled: false, url: "", compress_user_messages: false },
+        });
+        const catalog = me.catalog ?? [];
+        setAllModels(catalog);
+        setGroups(me.catalog_groups ?? (catalog.length ? [{ label: "Allowed", items: catalog.map((a) => ({ value: a, label: a })) }] : []));
+        setCombos([]);
+        // Prefer key from this browser's login; server injects on Apply if missing.
+        try {
+          const stored = sessionStorage.getItem("aigloo_member_key") ?? "";
+          if (stored) {
+            setCustomKey(stored);
+            setRealKey(stored);
+          }
+        } catch {
+          /* ignore */
+        }
+        // Pre-pick models for auto-config: first 3 into slots / all for openai list
+        if (catalog.length) {
+          if (tool?.format === "anthropic") {
+            setSlots({
+              opus: catalog[0] ?? "",
+              sonnet: catalog[1] ?? catalog[0] ?? "",
+              haiku: catalog[2] ?? catalog[0] ?? "",
+            });
+          } else {
+            setPicked(catalog.slice(0, 8));
+            setActive(catalog[0] ?? "");
+          }
+        }
+        return;
+      }
+
       const [epRes, cfgRes] = await Promise.all([
         fetch("/api/gw/admin/endpoint"),
         fetch("/api/gw/admin/config"),
@@ -174,14 +227,15 @@ export function ToolDetail({ id }: { id: string }) {
         setGroups(grps);
       }
     })();
-  }, []);
+  }, [tool?.format]);
 
   // reveal the selected gateway key so the env block is copy-ready (the whole
-  // point of this page is to paste a working config locally).
+  // point of this page is to paste a working config locally). Members use their login key.
   useEffect(() => {
+    if (isMember) return;
     if (!ep || ep.keys.length === 0) return;
     void adminApi.revealServerKey(keyIdx).then((r) => setRealKey(r.ok ? r.data?.key ?? "" : ""));
-  }, [ep, keyIdx]);
+  }, [ep, keyIdx, isMember]);
 
   if (!tool) return <Empty>Unknown tool.</Empty>;
   if (error) return <Empty>{error}</Empty>;
@@ -215,7 +269,7 @@ export function ToolDetail({ id }: { id: string }) {
             provider: {
               aigloo: {
                 npm: "@ai-sdk/openai-compatible",
-                options: { baseURL: `${base}/v1`, apiKey: realKey || "aigloo" },
+                options: { baseURL: `${base}/v1`, apiKey: effectiveKey || "aigloo" },
                 models: Object.fromEntries(ocModels.map((m) => [m, { name: m, modalities: modalitiesFor(m) }])),
               },
             },
@@ -266,7 +320,14 @@ export function ToolDetail({ id }: { id: string }) {
             className="lg:col-span-2"
             header={
               <>
-                <CardTitle title="Local setup" sub="detect this tool on your machine and write its config for you" />
+                <CardTitle
+                  title="Local setup"
+                  sub={
+                    isMember
+                      ? "Detects tools on this aigloo host and writes config with your access key + allowed models"
+                      : "detect this tool on your machine and write its config for you"
+                  }
+                />
                 {cli && (
                   <Badge tone={!cli.installed ? "neutral" : cli.configured ? "live" : "warn"}>
                     {!cli.installed ? "not detected" : cli.configured ? "configured" : "detected"}
@@ -329,52 +390,88 @@ export function ToolDetail({ id }: { id: string }) {
                 </SetupRow>
 
                 <SetupRow label="API Key">
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={customKey ? "__custom__" : String(keyIdx)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === "__custom__") { setShowCustomKey(true); return; }
-                          setCustomKey("");
-                          setKeyIdx(Number(v));
-                          localStorage.removeItem(`cli-custom-key-${id}`);
-                        }}
-                        className="flex-1"
-                      >
-                        {ep.keys.map((k, i) => <option key={i} value={i}>{k.name || `key ${i + 1}`}</option>)}
-                        {customKey && <option value="__custom__">{customKey.slice(0, 12)}… (custom)</option>}
-                        {!customKey && <option value="__custom__">Custom key…</option>}
-                      </Select>
-                      {customKey && (
-                        <Button variant="ghost" className="px-2 py-1 flex-none" title="remove custom key" onClick={() => {
-                          setCustomKey("");
-                          localStorage.removeItem(`cli-custom-key-${id}`);
-                        }}><Icon name="delete" size={15} /></Button>
+                  {isMember ? (
+                    <div className="text-[13px] text-text-muted">
+                      <span className="font-medium text-text">{memberName}</span>
+                      {" — "}
+                      {customKey || realKey
+                        ? "your login key (this browser)"
+                        : "Apply uses your session key on the server; paste below only if env copy is empty"}
+                      {!customKey && !realKey && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <input
+                            value={customKeyInput}
+                            onChange={(e) => setCustomKeyInput(e.target.value)}
+                            placeholder="paste your access key for env copy…"
+                            className="flex-1 rounded-brand border border-border bg-bg px-2.5 py-1.5 font-mono text-[12px] text-text outline-none placeholder:text-text-subtle"
+                          />
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              const k = customKeyInput.trim();
+                              setCustomKey(k);
+                              setRealKey(k);
+                              try {
+                                if (k) sessionStorage.setItem("aigloo_member_key", k);
+                              } catch {
+                                /* ignore */
+                              }
+                              setCustomKeyInput("");
+                            }}
+                          >
+                            Use
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    {showCustomKey && (
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
-                        <input
-                          autoFocus
-                          value={customKeyInput}
-                          onChange={(e) => setCustomKeyInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              setCustomKey(customKeyInput.trim());
-                              localStorage.setItem(`cli-custom-key-${id}`, customKeyInput.trim());
-                              setShowCustomKey(false);
-                              setCustomKeyInput("");
-                            }
+                        <Select
+                          value={customKey ? "__custom__" : String(keyIdx)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") { setShowCustomKey(true); return; }
+                            setCustomKey("");
+                            setKeyIdx(Number(v));
+                            localStorage.removeItem(`cli-custom-key-${id}`);
                           }}
-                          placeholder="paste API key…"
-                          className="flex-1 rounded-brand border border-accent bg-bg px-2.5 py-1.5 font-mono text-[12px] text-text outline-none placeholder:text-text-subtle"
-                        />
-                        <Button variant="ghost" onClick={() => { setCustomKey(customKeyInput.trim()); localStorage.setItem(`cli-custom-key-${id}`, customKeyInput.trim()); setShowCustomKey(false); setCustomKeyInput(""); }}>Add</Button>
-                        <Button variant="ghost" onClick={() => { setShowCustomKey(false); setCustomKeyInput(""); }}>Cancel</Button>
+                          className="flex-1"
+                        >
+                          {ep.keys.map((k, i) => <option key={i} value={i}>{k.name || `key ${i + 1}`}</option>)}
+                          {customKey && <option value="__custom__">{customKey.slice(0, 12)}… (custom)</option>}
+                          {!customKey && <option value="__custom__">Custom key…</option>}
+                        </Select>
+                        {customKey && (
+                          <Button variant="ghost" className="px-2 py-1 flex-none" title="remove custom key" onClick={() => {
+                            setCustomKey("");
+                            localStorage.removeItem(`cli-custom-key-${id}`);
+                          }}><Icon name="delete" size={15} /></Button>
+                        )}
                       </div>
-                    )}
-                  </div>
+                      {showCustomKey && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            autoFocus
+                            value={customKeyInput}
+                            onChange={(e) => setCustomKeyInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                setCustomKey(customKeyInput.trim());
+                                localStorage.setItem(`cli-custom-key-${id}`, customKeyInput.trim());
+                                setShowCustomKey(false);
+                                setCustomKeyInput("");
+                              }
+                            }}
+                            placeholder="paste API key…"
+                            className="flex-1 rounded-brand border border-accent bg-bg px-2.5 py-1.5 font-mono text-[12px] text-text outline-none placeholder:text-text-subtle"
+                          />
+                          <Button variant="ghost" onClick={() => { setCustomKey(customKeyInput.trim()); localStorage.setItem(`cli-custom-key-${id}`, customKeyInput.trim()); setShowCustomKey(false); setCustomKeyInput(""); }}>Add</Button>
+                          <Button variant="ghost" onClick={() => { setShowCustomKey(false); setCustomKeyInput(""); }}>Cancel</Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </SetupRow>
 
                 {isAnthropic ? (
@@ -478,7 +575,7 @@ export function ToolDetail({ id }: { id: string }) {
           header={
             <>
               <CardTitle title="Environment" sub="copy into your shell" />
-              {ep.keys.length > 1 && (
+              {!isMember && ep.keys.length > 1 && (
                 <Select
                   value={customKey ? "__custom__" : String(keyIdx)}
                   onChange={(e) => {
@@ -501,7 +598,11 @@ export function ToolDetail({ id }: { id: string }) {
           }
         >
           <CopyBlock text={block} />
-          {ep.keys.length === 0 ? (
+          {isMember ? (
+            <p className="mt-3 text-[12px] text-text-subtle">
+              Using your access key ({memberName}). Apply config writes it on this host even if the env block is empty.
+            </p>
+          ) : ep.keys.length === 0 ? (
             <p className="mt-3 text-[12px] text-warning">
               No gateway key set — auth is disabled. Add one under Endpoint, then it appears here.
             </p>

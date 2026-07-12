@@ -135,8 +135,11 @@ export const SESSION_COOKIE = COOKIE;
 /** Paths members may open (pages + APIs). Everything else → redirect/403. */
 export function memberPathAllowed(pathname: string): boolean {
   if (pathname === "/usage" || pathname.startsWith("/usage/")) return true;
+  if (pathname === "/tools" || pathname.startsWith("/tools/")) return true;
   if (pathname === "/api/me") return true;
   if (pathname === "/api/logout") return true;
+  // local CLI detect/apply (host machine only — same as admin auto-config)
+  if (pathname.startsWith("/api/cli-detect/")) return true;
   // usage + savings read-only under the dashboard gw proxy
   if (pathname === "/api/gw/admin/usage") return true;
   if (pathname === "/api/gw/admin/usage/series") return true;

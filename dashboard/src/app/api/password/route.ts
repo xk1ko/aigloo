@@ -24,6 +24,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: r.error ?? "could not change password" }, { status: r.status || 400 });
   }
 
+  try {
+    gw().db.logAudit("password.change", "admin", "");
+  } catch {
+    /* ignore */
+  }
+
   // Same cookie policy as /api/login — never force Secure on plain HTTP
   // localhost (NODE_ENV=production in the standalone build would break it).
   const res = NextResponse.json({ ok: true });

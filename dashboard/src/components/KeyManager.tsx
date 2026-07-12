@@ -168,7 +168,17 @@ export function KeyManager() {
                   <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
                     <MetaChip icon="layers" label={k.models?.length ? `${k.models.length} models` : "all models"} />
                     {k.rpm && <MetaChip icon="speed" label={`${k.rpm}/min`} />}
-                    {budget && <MetaChip icon="payments" label={`$${budget.limit}/${budget.window.replace("day", "D").replace("h", "H")}`} accent />}
+                    {budget && (
+                      <MetaChip
+                        icon="payments"
+                        label={
+                          budget.window === "lifetime"
+                            ? `$${budget.limit} lifetime`
+                            : `$${budget.limit}/${budget.window.replace("day", "D").replace("h", "H")}`
+                        }
+                        accent
+                      />
+                    )}
                     {k.expires && <MetaChip icon="event" label={`exp ${new Date(k.expires).toLocaleDateString("en-GB")}`} />}
                   </div>
 

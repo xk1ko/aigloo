@@ -102,7 +102,9 @@ Think: roommate, teammate, side project, CI bot, laptop vs desktop. Shared gatew
 
 **As admin**, create a key under **Access Keys**, set scope (models, RPM, spend cap window, expiry), copy it once, and share it. Spend caps are **rolling windows** (e.g. `$10 every day`) — they refill; they are not a one-shot total until the key dies. Key expiry is separate: after that date the key stops for both API and login.
 
-**As a key holder**, put the key in your tool's API key field *and* (if you want) paste it on the login page. You land on Usage with an **access card**: budget left + when it refills, allowed models, key expiry, and rate limit. No providers, no settings, no other people's keys.
+**As a key holder**, open login → **Access key** tab, paste the key. You land on Usage with an **access card** (budget left + refill or lifetime total, models, expiry, RPM) and **blocked-reason** banners if something will fail. **CLI Tools** auto-detects and configures on this aigloo host with only your key and allowed models (best on localhost). No providers, no settings, no other people's keys.
+
+Spend caps can be rolling (`$10 every day`) or **lifetime** (one-shot total that never refills).
 
 Multi-tenant-lite: enough to share aigloo for personal use without giving away the house. Still one process, one config — not a full SaaS control plane.
 

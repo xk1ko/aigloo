@@ -15,7 +15,9 @@ const baseBudget: BudgetStatus = {
   exhausted: false,
   est_converse: null,
   reset_in_ms: 888_000,
+  window_start: 0,
   window: "30day",
+  lifetime: false,
 };
 
 describe("buildKeyUsageRow", () => {
@@ -33,7 +35,7 @@ describe("buildKeyUsageRow", () => {
     expect(row.expires).toBe(1_700_000_000_000);
     expect(row.budget).toEqual({
       unit: "usd", limit: 600, spent: 24, pct: 0.04,
-      window: "30day", reset_in_ms: 888_000, exhausted: false, alert: false,
+      window: "30day", reset_in_ms: 888_000, exhausted: false, alert: false, lifetime: false,
     });
   });
 

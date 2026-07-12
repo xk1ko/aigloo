@@ -101,6 +101,8 @@ export class UsageDB {
   private readonly getAlertStateStmt;
   private readonly upsertAlertState;
   private readonly clearAlertStateStmt;
+  private readonly insertAuditLog;
+  private readonly getRecentAudit;
   private readonly now: () => number;
 
   constructor(
@@ -212,6 +214,14 @@ export class UsageDB {
         window_start INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_alert_log_ts ON alert_log(ts);
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL DEFAULT '',
+        detail TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
     `);
     // migrate older DBs created before client_key existed.
     const cols = this.db.prepare(`PRAGMA table_info(usage)`).all() as SqlRow[];
@@ -313,6 +323,11 @@ export class UsageDB {
       ON CONFLICT(scope) DO UPDATE SET alerted_at = @alerted_at, window_start = @window_start
     `);
     this.clearAlertStateStmt = this.db.prepare(`DELETE FROM alert_state WHERE scope = ?`);
+    this.insertAuditLog = this.db.prepare(`
+      INSERT INTO audit_log (ts, action, actor, detail)
+      VALUES (?, ?, ?, ?)
+    `);
+    this.getRecentAudit = this.db.prepare(`SELECT * FROM audit_log ORDER BY id DESC LIMIT ?`);
   }
 
   record(
@@ -706,6 +721,25 @@ export class UsageDB {
     this.clearAlertStateStmt.run(scope);
   }
 
+  /** Dashboard / admin activity (login, keys, password). Not budget alerts. */
+  logAudit(action: string, actor = "", detail = ""): void {
+    try {
+      this.insertAuditLog.run(this.now(), action, actor, detail);
+    } catch {
+      // never break the request path for audit failures
+    }
+  }
+
+  recentAudit(limit = 100): AuditLogRow[] {
+    return (this.getRecentAudit.all(Math.max(1, Math.min(limit, 500))) as SqlRow[]).map((r) => ({
+      id: num(r.id),
+      ts: num(r.ts),
+      action: String(r.action),
+      actor: String(r.actor ?? ""),
+      detail: String(r.detail ?? ""),
+    }));
+  }
+
   setPricingOverride(model: string, p: { input?: number | null; output?: number | null; cached?: number | null; cache_creation?: number | null; reasoning?: number | null }): void {
     this.upsertPricing.run({
       model,
@@ -813,6 +847,14 @@ export interface AlertLogRow {
   message: string;
   delivered: boolean;
   error: string;
+}
+
+export interface AuditLogRow {
+  id: number;
+  ts: number;
+  action: string;
+  actor: string;
+  detail: string;
 }
 
 export interface CostBreakdown {

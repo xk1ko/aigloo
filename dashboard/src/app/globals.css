@@ -305,6 +305,10 @@ html.light select option { background-color: #fff; color: #0c0d12; }
 .nav-isle-divider-brand {
   margin: 1rem 0;
 }
+/* Space nav from Disconnect so exit action isn't flush under the last icon */
+.nav-isle-divider-logout {
+  margin: 1rem 0 0.75rem;
+}
 
 .nav-isle[data-label]::after,
 .brand-isle[data-label]::after {

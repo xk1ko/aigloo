@@ -8,6 +8,7 @@ import { Icon } from "@/components/Icon";
 import { Empty, LoadingDots } from "@/components/ui";
 import { PasswordEditor } from "@/components/PasswordEditor";
 import { AutostartToggle } from "@/components/AutostartToggle";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { stringify } from "yaml";
 import type { MaskedConfig } from "@/lib/gateway";
 
@@ -122,6 +123,7 @@ export function ConfigEditor() {
 
           <PasswordEditor />
           <AutostartToggle />
+          <AuditLogPanel />
         </div>
 
         {/* RIGHT: pricing + backup */}

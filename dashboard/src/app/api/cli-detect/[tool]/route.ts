@@ -6,6 +6,9 @@ import os from "os";
 import { modalitiesForModel, DEFAULT_CAPABILITIES, type CapsTables } from "@/lib/capabilities";
 import { gateway } from "@/lib/gateway";
 import { isOnPath } from "@/gw/platform/resolveBin.js";
+import { parseSession, SESSION_COOKIE } from "@/lib/session";
+import { gw } from "@/lib/gw";
+import { clientKeyFingerprint } from "@/gw/middleware/auth.js";
 
 /**
  * Local CLI-tool detection + auto-config. These run in the Next.js server (which,
@@ -238,12 +241,33 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   }
 }
 
+/** If the caller is a member session, fill in their gateway key when missing. */
+function memberKeyFromSession(req: NextRequest): string | undefined {
+  try {
+    const g = gw();
+    const keys: string[] = g.state.config.raw.server.api_keys ?? [];
+    const session = parseSession(req.cookies.get(SESSION_COOKIE)?.value, {
+      currentAdminVersion: g.auth.version,
+      validFingerprints: keys.map((k) => clientKeyFingerprint(k)),
+    });
+    if (session?.role !== "member") return undefined;
+    return keys.find((k) => clientKeyFingerprint(k) === session.fingerprint);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function POST(req: NextRequest, ctx: Ctx) {
   const { tool } = await ctx.params;
   const h = HANDLERS[tool];
   if (!h) return NextResponse.json({ error: "tool does not support auto-config" }, { status: 400 });
   try {
     const body = (await req.json()) as ApplyBody;
+    // Members: inject their access key so Apply works without re-pasting.
+    if (!body.key?.trim()) {
+      const mk = memberKeyFromSession(req);
+      if (mk) body.key = mk;
+    }
     const res = (await h.apply(body)) as { error?: string };
     if (res.error) return NextResponse.json(res, { status: 400 });
     return NextResponse.json(res);

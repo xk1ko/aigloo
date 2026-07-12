@@ -39,6 +39,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // 1) Admin password
   if (g.auth.verify(secret)) {
+    g.db.logAudit("login.admin", "admin", "");
     const res = NextResponse.json({ ok: true, role: "admin" as const });
     res.cookies.set(SESSION_COOKIE, sealSession(g.auth.version), cookieOpts(req));
     return res;
@@ -49,10 +50,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   const matched = matchKey(secret, keys);
   if (matched) {
     const fp = clientKeyFingerprint(matched);
+    const name = g.state.config.raw.server.key_names?.[matched] ?? fp;
+    g.db.logAudit("login.member", `member:${fp}`, String(name));
     const res = NextResponse.json({ ok: true, role: "member" as const, fingerprint: fp });
     res.cookies.set(SESSION_COOKIE, sealMemberSession(fp), cookieOpts(req));
     return res;
   }
 
+  g.db.logAudit("login.fail", "unknown", "");
   return NextResponse.json({ error: "wrong password or access key" }, { status: 401 });
 }

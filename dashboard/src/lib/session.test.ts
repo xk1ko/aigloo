@@ -106,9 +106,12 @@ describe("member session", () => {
 });
 
 describe("memberPathAllowed", () => {
-  it("allows usage and related APIs", () => {
+  it("allows usage, tools, and related APIs", () => {
     expect(memberPathAllowed("/usage")).toBe(true);
+    expect(memberPathAllowed("/tools")).toBe(true);
+    expect(memberPathAllowed("/tools/claude-code")).toBe(true);
     expect(memberPathAllowed("/api/me")).toBe(true);
+    expect(memberPathAllowed("/api/cli-detect/claude-code")).toBe(true);
     expect(memberPathAllowed("/api/gw/admin/usage")).toBe(true);
     expect(memberPathAllowed("/api/gw/admin/usage/series")).toBe(true);
     expect(memberPathAllowed("/api/gw/admin/savings/summary")).toBe(true);

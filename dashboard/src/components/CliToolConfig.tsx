@@ -14,15 +14,23 @@ export function CliToolConfig() {
   const [port, setPort] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [detect, setDetect] = useState<Record<string, DetectState>>({});
+  const [isMember, setIsMember] = useState(false);
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/gw/admin/endpoint");
-      if (!res.ok) {
-        setError("could not reach the gateway");
-        return;
+      const meRes = await fetch("/api/me", { credentials: "same-origin" });
+      const me = meRes.ok ? ((await meRes.json()) as { role?: string; port?: number }) : null;
+      if (me?.role === "member") {
+        setIsMember(true);
+        setPort(me.port ?? 18080);
+      } else {
+        const res = await fetch("/api/gw/admin/endpoint");
+        if (!res.ok) {
+          setError("could not reach the gateway");
+          return;
+        }
+        setPort(((await res.json()) as EndpointPayload).port);
       }
-      setPort(((await res.json()) as EndpointPayload).port);
 
       const results = await Promise.all(
         CLI_TOOLS.map(async (t) => {
@@ -47,6 +55,11 @@ export function CliToolConfig() {
     <div>
       <div className="mb-5">
         <h1 className="text-[30px] font-bold tracking-tight heading-gradient heading-accent">CLI Tools</h1>
+        {isMember && (
+          <p className="mt-1 text-[13px] text-text-muted">
+            Auto-config runs on <strong className="text-text">this aigloo host</strong> with your access key and allowed models only.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
