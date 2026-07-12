@@ -5,8 +5,6 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [1.2.1] — 2026-07-12
 
 ### Added
@@ -786,8 +784,3 @@ dashboard.
   installs dashboard deps, builds the dashboard).
 - Brand: `a»` mark (favicon + sidebar) and an `ai»getwey` wordmark.
 
-[Unreleased]: https://github.com/xk1ko/aigloo/compare/v1.2.1...HEAD
-[1.2.1]: https://github.com/xk1ko/aigloo/releases/tag/v1.2.1
-[1.2.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.2.0
-[1.0.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.0.0
-[aigetwey 1.5.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.5.0
