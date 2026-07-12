@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-07-12
+
 ### Added
 - **Usage by access key** — Usage summary includes `by_key` (per gateway-key fingerprint). Dashboard shows a **By Access Key** panel with key labels, spend, tokens, and request counts for the selected window. `GET /admin/keys/usage` accepts optional `since` for window-scoped key totals
-- **Member login with access key** — Login accepts admin password **or** a gateway access key. Key sessions (`role: member`) only see **Usage** (scoped to that key’s fingerprint); admin password keeps full console. `GET /api/me` returns role; proxy + `/api/gw` enforce member ACL
+- **Member login with access key** — Login accepts admin password **or** a gateway access key. Key sessions (`role: member`) only see **Usage** (scoped to that key’s fingerprint); admin password keeps full console. Proxy + `/api/gw` enforce member ACL
+- **Member access card** — Members see their spend cap (refilling window + next reset), allowed models, key expiry, and RPM on Usage via expanded `GET /api/me`
 
 ### Fixed
 - **No-shell PATH detection** — CLI Tools and headroom no longer shell out to `where`/`which` (or string `python --version`). They walk PATH + known install dirs with `fs` (`src/platform/resolveBin.ts`); Python version checks use `execFile` only. Removes remaining Windows console flashes on Check/Start and CLI detection
@@ -774,6 +777,7 @@ dashboard.
   installs dashboard deps, builds the dashboard).
 - Brand: `a»` mark (favicon + sidebar) and an `ai»getwey` wordmark.
 
-[Unreleased]: https://github.com/xk1ko/aigloo/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/xk1ko/aigloo/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.2.0
 [1.0.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.0.0
 [aigetwey 1.5.0]: https://github.com/xk1ko/aigloo/releases/tag/v1.5.0
