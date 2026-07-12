@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Icon } from "./Icon";
 
 type NavItem = { href: string; label: string; icon: string };
@@ -28,20 +28,14 @@ const MEMBER_NAV: NavItem[] = [
 
 export function Sidebar() {
   const path = usePathname();
-  const router = useRouter();
   const [role, setRole] = useState<"admin" | "member" | null>(null);
-  const [memberName, setMemberName] = useState("");
 
   useEffect(() => {
     fetch("/api/me", { credentials: "same-origin" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { role?: string; name?: string } | null) => {
-        if (d?.role === "member") {
-          setRole("member");
-          setMemberName(d.name ?? "Access key");
-        } else if (d?.role === "admin") {
-          setRole("admin");
-        }
+      .then((d: { role?: string } | null) => {
+        if (d?.role === "member") setRole("member");
+        else if (d?.role === "admin") setRole("admin");
       })
       .catch(() => {});
   }, []);
@@ -98,16 +92,8 @@ export function Sidebar() {
         )}
       </nav>
 
-      {role === "member" && memberName && (
-        <div
-          className="mt-auto mb-2 max-w-[52px] truncate px-1 text-center text-[9px] leading-tight text-text-subtle"
-          title={memberName}
-        >
-          {memberName}
-        </div>
-      )}
-
-      <button onClick={logout} className={`nav-isle ${role === "member" ? "" : "mt-4"}`} data-label="Disconnect">
+      {/* Member key name lives on Usage (MemberAccessCard) — rail is too narrow for labels */}
+      <button onClick={logout} className="nav-isle mt-auto" data-label="Disconnect">
         <Icon name="logout" size={19} />
       </button>
     </aside>

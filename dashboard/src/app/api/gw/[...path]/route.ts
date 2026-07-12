@@ -54,7 +54,7 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse | R
     }
 
     if (adminPath === "keys") {
-      const raw = keys.find((k) => clientKeyFingerprint(k) === session.fingerprint);
+      const raw = keys.find((k: string) => clientKeyFingerprint(k) === session.fingerprint);
       if (!raw) {
         return NextResponse.json({ error: "key no longer valid" }, { status: 401, headers: SECURITY_HEADERS });
       }

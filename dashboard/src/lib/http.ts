@@ -31,12 +31,13 @@ export function bodyTooLarge(req: Request): boolean {
   return len !== null && Number(len) > MAX_BODY_BYTES;
 }
 
-interface AdminResultLike {
+/** Loose headers: admin-handler may leave optional keys as undefined. */
+export type AdminResultLike = {
   status: number;
   body?: unknown;
-  headers?: Record<string, string>;
+  headers?: Record<string, string | undefined>;
   stream?: ReadableStream<Uint8Array>;
-}
+};
 
 /** Response-shaping for an AdminResult (stream / string body / json body),
  *  shared by admin/[...path]/route.ts (Bearer-password auth) and
@@ -44,7 +45,13 @@ interface AdminResultLike {
  *  how they authenticate the caller, not in how they turn a result into a
  *  Response. */
 export function adminResultToResponse(result: AdminResultLike): Response {
-  const headers = { ...SECURITY_HEADERS, ...(result.headers ?? {}) };
+  const extra: Record<string, string> = {};
+  if (result.headers) {
+    for (const [k, v] of Object.entries(result.headers)) {
+      if (v !== undefined) extra[k] = v;
+    }
+  }
+  const headers = { ...SECURITY_HEADERS, ...extra };
   if (result.stream) {
     return new Response(result.stream, { status: result.status, headers });
   }

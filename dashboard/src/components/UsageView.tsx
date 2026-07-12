@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { AreaChart, type SeriesPoint } from "@/components/AreaChart";
 import { Icon } from "@/components/Icon";
+import { MemberAccessCard } from "@/components/MemberAccessCard";
 import { fmt, Empty } from "@/components/ui";
 import { adminApi } from "@/lib/client";
 import type { UsageSummary, SavingsSummary } from "@/lib/gateway";
@@ -42,6 +43,16 @@ export function UsageView() {
   const [keyNames, setKeyNames] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isMember, setIsMember] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/me", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { role?: string } | null) => {
+        if (d?.role === "member") setIsMember(true);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async (w: Window) => {
     setLoading(true);
@@ -114,6 +125,8 @@ export function UsageView() {
           ))}
         </div>
       </div>
+
+      {isMember && <MemberAccessCard />}
 
       {error ? (
         <Empty>{error}</Empty>
