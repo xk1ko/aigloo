@@ -13,7 +13,6 @@ export function EndpointView() {
   const [ep, setEp] = useState<EndpointPayload | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [hr, setHr] = useState<HeadroomStatusReply | null>(null);
 
   const reload = useCallback(async () => {
     const r = await adminApi.endpoint();
@@ -25,15 +24,11 @@ export function EndpointView() {
     setEp(r.data);
   }, []);
 
-  const reloadHr = useCallback(async () => {
-    const r = await adminApi.headroomStatus();
-    if (r.ok) setHr(r.data);
-  }, []);
-
+  // Config only — do NOT probe headroom on mount (Windows shells `where`/`python`
+  // and flashes a console). Detection runs on Check / Start / Stop only.
   useEffect(() => {
     void reload();
-    void reloadHr();
-  }, [reload, reloadHr]);
+  }, [reload]);
 
   async function run(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusy(label);
@@ -152,15 +147,7 @@ export function EndpointView() {
           </div>
         </div>
 
-        {/* Headroom */}
-        <HeadroomCard
-          ep={ep}
-          hr={hr}
-          refresh={async () => {
-            await reload();
-            await reloadHr();
-          }}
-        />
+        <HeadroomCard ep={ep} reloadConfig={reload} />
       </div>
     </div>
   );
@@ -168,47 +155,90 @@ export function EndpointView() {
 
 function HeadroomCard({
   ep,
-  hr,
-  refresh,
+  reloadConfig,
 }: {
   ep: EndpointPayload;
-  hr: HeadroomStatusReply | null;
-  refresh: () => Promise<void>;
+  reloadConfig: () => Promise<void>;
 }) {
   const h = ep.headroom;
+  const [hr, setHr] = useState<HeadroomStatusReply | null>(null);
   const [url, setUrl] = useState(h.url);
   const [localBusy, setLocalBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [check, setCheck] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => setUrl(h.url), [h.url]);
 
-  async function act(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
+  /** Shells out on the server (where/python) — only from Check / Start / Stop. */
+  async function probeStatus(): Promise<HeadroomStatusReply | null> {
+    const r = await adminApi.headroomStatus();
+    if (r.ok && r.data) {
+      setHr(r.data);
+      return r.data;
+    }
+    return null;
+  }
+
+  async function actConfig(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setLocalBusy(label);
     setMsg("");
     setCheck(null);
     const r = await fn();
     setLocalBusy("");
     if (!r.ok) setMsg(r.error ?? "action failed");
-    await refresh();
+    await reloadConfig();
   }
 
   async function checkProxy() {
     setLocalBusy("check");
     setMsg("");
     setCheck(null);
-    const r = await adminApi.headroomStatus();
+    const data = await probeStatus();
     setLocalBusy("");
-    await refresh();
-    if (!r.ok || !r.data) {
-      setCheck({ ok: false, text: r.error ?? "could not reach the gateway" });
+    if (!data) {
+      setCheck({ ok: false, text: "could not reach the gateway" });
       return;
     }
     setCheck(
-      r.data.running
-        ? { ok: true, text: `proxy is up at ${r.data.url}` }
-        : { ok: false, text: `no proxy responding at ${r.data.url}` },
+      data.running
+        ? { ok: true, text: `proxy is up at ${data.url}` }
+        : { ok: false, text: `no proxy responding at ${data.url}` },
     );
   }
+
+  async function startProxy() {
+    setLocalBusy("start");
+    setMsg("");
+    setCheck(null);
+    const r = await adminApi.headroomStart();
+    if (!r.ok) {
+      setLocalBusy("");
+      setMsg(r.error ?? "start failed");
+      await probeStatus();
+      return;
+    }
+    const data = await probeStatus();
+    setLocalBusy("");
+    setCheck(
+      data?.running
+        ? { ok: true, text: `proxy is up at ${data.url}` }
+        : { ok: false, text: data ? `started but no proxy at ${data.url} yet` : "start finished; status unknown" },
+    );
+  }
+
+  async function stopProxy() {
+    setLocalBusy("stop");
+    setMsg("");
+    setCheck(null);
+    const r = await adminApi.headroomStop();
+    setLocalBusy("");
+    if (!r.ok) setMsg(r.error ?? "stop failed");
+    await probeStatus();
+  }
+
+  const startDisabled =
+    !!localBusy ||
+    !!hr?.running ||
+    (hr !== null && !hr.canStart);
 
   return (
     <div className="overflow-hidden rounded-brand-lg card">
@@ -220,16 +250,27 @@ function HeadroomCard({
         <p className="mt-0.5 text-[12px] text-text-muted">External context-compression proxy.</p>
       </div>
       <div>
-        {/* left: status + toggles */}
         <div className="border-b border-border-subtle px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Pill $tone={hr?.installed ? "live" : "neutral"}>{hr?.installed ? "installed" : "not installed"}</Pill>
-            <Pill $tone={hr?.running ? "live" : "warn"}>{hr?.running ? "running" : "down"}</Pill>
-            <Pill $tone={hr?.python ? "info" : "neutral"}>{hr?.python ? `py ${hr.python}` : "no py ≥3.10"}</Pill>
-            {hr?.managedPid ? <span className="tnum text-text-subtle">pid {hr.managedPid}</span> : null}
+            {hr === null ? (
+              <Pill $tone="neutral">not checked</Pill>
+            ) : (
+              <>
+                <Pill $tone={hr.installed ? "live" : "neutral"}>{hr.installed ? "installed" : "not installed"}</Pill>
+                <Pill $tone={hr.running ? "live" : "warn"}>{hr.running ? "running" : "down"}</Pill>
+                <Pill $tone={hr.python ? "info" : "neutral"}>{hr.python ? `py ${hr.python}` : "no py ≥3.10"}</Pill>
+                {hr.managedPid ? <span className="tnum text-text-subtle">pid {hr.managedPid}</span> : null}
+              </>
+            )}
           </div>
 
           <div className="mt-4 space-y-3">
+            {hr === null && (
+              <div className="flex items-center gap-2 rounded-brand border border-border-subtle bg-surface-2/50 px-3 py-2 text-[12px] text-text-subtle">
+                <Icon name="info" size={14} className="flex-none text-text-subtle" />
+                <span>Click Check (or Start) to detect the headroom CLI — avoids probing on every page visit.</span>
+              </div>
+            )}
             {hr && !hr.running && (
               <div className="flex items-center gap-2 rounded-brand border border-accent/20 bg-accent/5 px-3 py-2 text-[12px] text-text-subtle">
                 <Icon name="info" size={14} className="flex-none text-accent" />
@@ -242,7 +283,7 @@ function HeadroomCard({
               on={h.enabled}
               busy={localBusy === "enable"}
               disabled={!hr?.running && !h.enabled}
-              onChange={(v) => act("enable", () => adminApi.setHeadroom({ enabled: v }))}
+              onChange={(v) => actConfig("enable", () => adminApi.setHeadroom({ enabled: v }))}
             />
             <div className="h-px bg-border-subtle" />
             <ToggleRow
@@ -251,30 +292,25 @@ function HeadroomCard({
               on={h.compress_user_messages}
               busy={localBusy === "cum"}
               disabled={!hr?.running && !h.enabled}
-              onChange={(v) => act("cum", () => adminApi.setHeadroom({ compress_user_messages: v }))}
+              onChange={(v) => actConfig("cum", () => adminApi.setHeadroom({ compress_user_messages: v }))}
             />
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button
-              disabled={!hr?.canStart || hr?.running || !!localBusy}
-              onClick={async () => {
-                await act("start", () => adminApi.headroomStart());
-                await checkProxy();
-              }}
-            >
+            <Button disabled={startDisabled} onClick={() => void startProxy()}>
               <Icon name={localBusy === "start" ? "sync" : "play_arrow"} size={16} className={localBusy === "start" ? "animate-spin" : ""} />
               {localBusy === "start" ? "Starting…" : "Start"}
             </Button>
             <Button
               variant="danger"
               disabled={!hr?.managedPid || localBusy === "stop"}
-              onClick={() => act("stop", () => adminApi.headroomStop())}
+              onClick={() => void stopProxy()}
             >
               <Icon name="stop" size={16} /> Stop
             </Button>
-            <Button variant="ghost" disabled={localBusy === "check"} onClick={checkProxy}>
-              <Icon name="sync" size={16} /> {localBusy === "check" ? "Checking…" : "Check"}
+            <Button variant="ghost" disabled={!!localBusy} onClick={() => void checkProxy()}>
+              <Icon name="sync" size={16} className={localBusy === "check" ? "animate-spin" : ""} />
+              {localBusy === "check" ? "Checking…" : "Check"}
             </Button>
           </div>
 
@@ -289,7 +325,7 @@ function HeadroomCard({
             </p>
           )}
           {hr?.installed && !hr.localUrl && (
-            <p className="mt-3 text-[11px] text-text-subtle">URL isn't loopback — start that proxy yourself.</p>
+            <p className="mt-3 text-[11px] text-text-subtle">URL isn&apos;t loopback — start that proxy yourself.</p>
           )}
 
           {msg && <p className="mt-2 text-[12px] text-danger">{msg}</p>}
@@ -300,7 +336,6 @@ function HeadroomCard({
           )}
         </div>
 
-        {/* right: URL input */}
         <div className="px-5 py-4">
           <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-text-subtle">Proxy URL</div>
           <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:8787" className="font-mono text-[13px]" />
@@ -308,7 +343,7 @@ function HeadroomCard({
             <Button
               variant="ghost"
               disabled={url.trim() === h.url || localBusy === "url"}
-              onClick={() => act("url", () => adminApi.setHeadroom({ url: url.trim() }))}
+              onClick={() => actConfig("url", () => adminApi.setHeadroom({ url: url.trim() }))}
             >
               Save URL
             </Button>

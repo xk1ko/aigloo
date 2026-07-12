@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Login Connect does nothing (all OSes, local/source builds)** — Next `output: "standalone"` never copies `.next/static` into the standalone tree. Local builds skipped `prepare-standalone.mjs` (only ran on npm publish), so `/_next/static/*` 404'd, React never hydrated, and the Connect button was dead HTML. Now `dashboard` build always runs `prepare-standalone.mjs`, and `ensureSetup` self-heals missing static on boot
+- **Windows: CMD flash when opening Endpoint** — headroom status (`where` / `python --version`) no longer runs on every Endpoint visit. Detection only on **Check** / **Start** / **Stop**; UI shows "not checked" until then
 - **Windows: `npm run build` failed** — script used `rm -rf dist` (Unix-only). Now uses a Node one-liner that works on Windows/macOS/Linux
 - **Windows: AuthStore upgrade path returned stale empty version** — `currentVersion()` cached by `mtimeMs`; rapid rewrite after stamping `version` can keep the same ms on Windows → proxy still saw `""`. `persist()` now updates the cache (mtime+size)
 - **Data dir is `~/.aigloo` on every OS** (`C:\Users\<name>\.aigloo` on Windows) — tray + gateway share one home. One-time migrate from legacy `%APPDATA%\aigloo` if home is empty
