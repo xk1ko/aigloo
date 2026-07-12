@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Self-hosted AI gateway</strong><br>
-  One endpoint · format translation · fallback routing · token saving · spend control · access keys
+  One endpoint · format translation · fallback routing · token saving · spend control · access keys · member usage
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> · <a href="#getting-started">Quick Start</a> · <a href="#token-savers">Token Savers</a> · <a href="#configuration">Config</a> · <a href="#supported-cli-tools">CLI Tools</a>
+  <a href="#features">Features</a> · <a href="#access-keys--member-login">Access keys</a> · <a href="#getting-started">Quick Start</a> · <a href="#token-savers">Token Savers</a> · <a href="#configuration">Config</a> · <a href="#supported-cli-tools">CLI Tools</a>
 </p>
 
 ---
@@ -56,7 +56,7 @@ First run bootstraps everything. Subsequent runs start instantly.
 
 1. **Add providers** — paste your API keys, pick models. Use `provider/model` directly (key round-robin) or define combo aliases for multi-provider fallback chains
 2. **Point your tools** at `http://localhost:18080` with a gateway key
-3. **Track everything** — per-request cost, token usage, budgets, alerts
+3. **Track everything** — per-request cost, tokens, budgets, and usage broken down by access key
 
 ---
 
@@ -66,7 +66,9 @@ First run bootstraps everything. Subsequent runs start instantly.
 - **Routing & fallback** — use `provider/model` directly (key round-robin) or define combo aliases for multi-provider fallback chains; auto-rotates keys on 429/5xx/timeout
 - **Pricing** — per-model cost tracking with auto-fetched rates from [models.dev](https://models.dev) (4000+ models) and [LiteLLM](https://github.com/BerriAI/litellm) as backup; manual overrides always win
 - **Token savers** — RTK compresses tool results, caveman trims prose, ponytail nudges minimal code, headroom compresses context — with per-request $ savings tracked on the Usage page
-- **Access keys** — share gateway keys with model allowlist, rate limit, spend cap, and expiry
+- **Access keys** — mint gateway keys with model allowlist, rate limit, rolling spend cap, and expiry — hand them to devices, teammates, or scripts
+- **Member login** — the same access key opens a usage-only dashboard view (no admin console). Password stays full control; keys stay scoped
+- **Usage by key** — admin Usage shows spend, tokens, and requests **by access key** for the selected window
 - **Budgets** — rolling spend caps (global/provider/model/key) with live countdown and per-token-type cost tracking
 - **Alert notifications** — webhook, Telegram, or Discord alerts when budgets hit their threshold or run out. Deduped per budget window
 - **Dashboard** — glassmorphic aigloo design: providers, combos, usage, budgets, CLI tools, live console, settings — all drag-to-reorder
@@ -87,6 +89,23 @@ First run bootstraps everything. Subsequent runs start instantly.
 
 ---
 
+## Access keys & member login
+
+Gateway keys do double duty: **API auth** for your tools, and optional **dashboard login** for the person (or device) holding that key.
+
+| Who | Signs in with | Sees |
+|-----|---------------|------|
+| **Admin** | Dashboard password | Full console — providers, keys, budgets, settings, everything |
+| **Member** | A gateway access key | **Usage only** — their spend, tokens, and limits for that key |
+
+**As admin**, create a key under **Access Keys**, set scope (models, RPM, spend cap window, expiry), and share the cleartext once. Spend caps are **rolling windows** (e.g. `$10 every day`) — they refill; they are not a one-shot total until the key dies. Key expiry is separate: after that date the key stops working for API and login.
+
+**As a member**, paste the key on the login page (same field as the password). You land on Usage with an **access card**: budget left + when it refills, allowed models, key expiry, and rate limit. No providers, no settings, no other keys.
+
+That's multi-tenant-lite — enough to hand out keys without giving away the house. Still one process, one config; not a full SaaS control plane.
+
+---
+
 ## Getting started
 
 ### Quick start
@@ -96,7 +115,7 @@ npm install -g aigloo
 aigloo
 ```
 
-The CLI seeds `config.yaml`, builds the dashboard, opens your browser. One URL serves everything — dashboard, API, and admin: `http://localhost:18080`.
+The CLI seeds `config.yaml`, builds the dashboard, opens your browser. One URL serves everything — dashboard, API, and admin: `http://localhost:18080`. Default admin password is `123456` — change it in **Settings** after first login.
 
 A terminal menu offers: **Web UI** / **Terminal** (logs) / **Hide to Tray** (macOS · Linux · Windows) / **Exit**.
 Flags: `-p/--port`, `-n/--no-browser`, `-y/--yes`, `-t/--tray`.
@@ -224,7 +243,7 @@ Headroom is the only external dependency — install from [chopratejas/headroom]
 | `AIGLOO_PRICING_SYNC_ENABLED` | Auto-fetch model pricing from models.dev + LiteLLM (default `true`). Set `false` to disable |
 | `AIGLOO_PRICING_SYNC_INTERVAL` | Pricing sync interval in seconds (default `86400` = 24h) |
 
-Admin password and provider keys never reach the browser — the dashboard proxies `/admin/*` server-side.
+Admin password and provider keys never reach the browser — the dashboard proxies `/admin/*` server-side. Gateway access keys are different: they authenticate `/v1` clients and can also open a member session on the login page.
 
 ---
 
