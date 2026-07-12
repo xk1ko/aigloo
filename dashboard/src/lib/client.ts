@@ -178,6 +178,7 @@ export const adminApi = {
   headroomStatus: () => api<HeadroomStatusReply>("GET", "/admin/headroom/status"),
   headroomStart: () => api<{ success?: boolean; pid?: number; alreadyRunning?: boolean }>("POST", "/admin/headroom/start"),
   headroomStop: () => api<{ stopped: boolean; reason?: string; pid?: number }>("POST", "/admin/headroom/stop"),
+  headroomLog: () => api<{ log: string }>("GET", "/admin/headroom/log"),
 
   putConfig: (text: string) => api<{ ok: boolean }>("PUT", "/admin/config", { text }),
 

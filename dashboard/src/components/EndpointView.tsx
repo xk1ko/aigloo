@@ -153,6 +153,30 @@ export function EndpointView() {
   );
 }
 
+const HEADROOM_INSTALL_CMD = "pipx install git+https://github.com/chopratejas/headroom";
+
+/** Coarse setup ladder for the Headroom card (checked only after Check / Start / Stop). */
+type HeadroomPhase =
+  | "unknown"
+  | "no_python"
+  | "not_installed"
+  | "external"
+  | "down"
+  | "up_off"
+  | "active"
+  | "enabled_down";
+
+function headroomPhase(hr: HeadroomStatusReply | null, enabled: boolean): HeadroomPhase {
+  if (!hr) return "unknown";
+  if (hr.running && enabled) return "active";
+  if (hr.running && !enabled) return "up_off";
+  if (enabled && !hr.running) return "enabled_down";
+  if (!hr.python && !hr.installed) return "no_python";
+  if (!hr.installed) return "not_installed";
+  if (!hr.localUrl) return "external";
+  return "down";
+}
+
 function HeadroomCard({
   ep,
   reloadConfig,
@@ -166,9 +190,14 @@ function HeadroomCard({
   const [localBusy, setLocalBusy] = useState("");
   const [msg, setMsg] = useState("");
   const [check, setCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logText, setLogText] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   useEffect(() => setUrl(h.url), [h.url]);
 
-  /** Shells out on the server (where/python) — only from Check / Start / Stop. */
+  const phase = headroomPhase(hr, h.enabled);
+
+  /** Shells out on the server — only from Check / Start / Stop (no mount probe). */
   async function probeStatus(): Promise<HeadroomStatusReply | null> {
     const r = await adminApi.headroomStatus();
     if (r.ok && r.data) {
@@ -176,6 +205,13 @@ function HeadroomCard({
       return r.data;
     }
     return null;
+  }
+
+  async function loadLog(): Promise<string> {
+    const r = await adminApi.headroomLog();
+    const text = r.ok && r.data ? (r.data.log || "(empty log)") : (r.error ?? "could not load log");
+    setLogText(text);
+    return text;
   }
 
   async function actConfig(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
@@ -205,8 +241,8 @@ function HeadroomCard({
     );
   }
 
-  async function startProxy() {
-    setLocalBusy("start");
+  async function startProxy(alsoEnable: boolean) {
+    setLocalBusy(alsoEnable ? "start-enable" : "start");
     setMsg("");
     setCheck(null);
     const r = await adminApi.headroomStart();
@@ -214,15 +250,39 @@ function HeadroomCard({
       setLocalBusy("");
       setMsg(r.error ?? "start failed");
       await probeStatus();
+      setLogOpen(true);
+      await loadLog();
       return;
     }
-    const data = await probeStatus();
+    let data = await probeStatus();
+    // Brief wait if spawn succeeded but /health not ready yet
+    if (data && !data.running) {
+      await new Promise((res) => setTimeout(res, 600));
+      data = await probeStatus();
+    }
+    if (alsoEnable && data?.running && !h.enabled) {
+      const en = await adminApi.setHeadroom({ enabled: true });
+      if (!en.ok) setMsg(en.error ?? "proxy up but enable failed");
+      await reloadConfig();
+      data = await probeStatus();
+    } else if (alsoEnable && data?.running) {
+      await reloadConfig();
+    }
     setLocalBusy("");
     setCheck(
       data?.running
-        ? { ok: true, text: `proxy is up at ${data.url}` }
+        ? {
+            ok: true,
+            text: alsoEnable
+              ? `proxy up and compression on at ${data.url}`
+              : `proxy is up at ${data.url}`,
+          }
         : { ok: false, text: data ? `started but no proxy at ${data.url} yet` : "start finished; status unknown" },
     );
+    if (!data?.running) {
+      setLogOpen(true);
+      await loadLog();
+    }
   }
 
   async function stopProxy() {
@@ -235,10 +295,34 @@ function HeadroomCard({
     await probeStatus();
   }
 
+  async function toggleLog() {
+    if (logOpen) {
+      setLogOpen(false);
+      return;
+    }
+    setLogOpen(true);
+    setLocalBusy("log");
+    await loadLog();
+    setLocalBusy("");
+  }
+
+  function copyInstall() {
+    void navigator.clipboard.writeText(HEADROOM_INSTALL_CMD).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   const startDisabled =
     !!localBusy ||
     !!hr?.running ||
     (hr !== null && !hr.canStart);
+
+  const canStartEnable =
+    !localBusy &&
+    hr !== null &&
+    hr.canStart &&
+    !hr.running;
 
   return (
     <div className="overflow-hidden rounded-brand-lg card">
@@ -251,32 +335,59 @@ function HeadroomCard({
       </div>
       <div>
         <div className="border-b border-border-subtle px-5 py-4">
+          {/* Primary status + detail pills */}
           <div className="flex flex-wrap items-center gap-2">
-            {hr === null ? (
-              <Pill $tone="neutral">not checked</Pill>
-            ) : (
+            <HeadroomPhasePill phase={phase} />
+            {hr && (
               <>
-                <Pill $tone={hr.installed ? "live" : "neutral"}>{hr.installed ? "installed" : "not installed"}</Pill>
-                <Pill $tone={hr.running ? "live" : "warn"}>{hr.running ? "running" : "down"}</Pill>
-                <Pill $tone={hr.python ? "info" : "neutral"}>{hr.python ? `py ${hr.python}` : "no py ≥3.10"}</Pill>
-                {hr.managedPid ? <span className="tnum text-text-subtle">pid {hr.managedPid}</span> : null}
+                {hr.python ? (
+                  <Pill $tone="info">py {hr.python}</Pill>
+                ) : hr.installed ? null : (
+                  <Pill $tone="neutral">no py ≥3.10</Pill>
+                )}
+                {hr.managedPid ? <span className="tnum text-[11px] text-text-subtle">pid {hr.managedPid}</span> : null}
               </>
             )}
           </div>
 
+          <div className="mt-3">
+            <HeadroomGuidance phase={phase} url={hr?.url ?? h.url} path={hr?.path ?? null} />
+          </div>
+
+          {/* Install command when needed */}
+          {(phase === "not_installed" || phase === "no_python") && (
+            <div className="mt-3 space-y-2">
+              {phase === "no_python" && (
+                <p className="text-[11px] text-text-subtle">
+                  Install{" "}
+                  <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                    Python ≥ 3.10
+                  </a>
+                  , then install the CLI:
+                </p>
+              )}
+              <div className="flex items-center gap-2 rounded-brand border border-border-subtle bg-surface-2/50 px-2.5 py-1.5">
+                <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-text">{HEADROOM_INSTALL_CMD}</code>
+                <button
+                  type="button"
+                  onClick={copyInstall}
+                  className="flex flex-none items-center gap-1 rounded-brand px-2 py-1 text-[11px] font-medium text-text-muted hover:bg-surface-2 hover:text-text"
+                >
+                  <Icon name="content_copy" size={13} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <p className="text-[11px] text-text-subtle">
+                From{" "}
+                <a href="https://github.com/chopratejas/headroom" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                  chopratejas/headroom
+                </a>
+                . Then click Check.
+              </p>
+            </div>
+          )}
+
           <div className="mt-4 space-y-3">
-            {hr === null && (
-              <div className="flex items-center gap-2 rounded-brand border border-border-subtle bg-surface-2/50 px-3 py-2 text-[12px] text-text-subtle">
-                <Icon name="info" size={14} className="flex-none text-text-subtle" />
-                <span>Click Check (or Start) to detect the headroom CLI — avoids probing on every page visit.</span>
-              </div>
-            )}
-            {hr && !hr.running && (
-              <div className="flex items-center gap-2 rounded-brand border border-accent/20 bg-accent/5 px-3 py-2 text-[12px] text-text-subtle">
-                <Icon name="info" size={14} className="flex-none text-accent" />
-                <span>Start the proxy first, then enable compression.</span>
-              </div>
-            )}
             <ToggleRow
               label="Enable"
               desc="Compress context through proxy before each request."
@@ -297,13 +408,23 @@ function HeadroomCard({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button disabled={startDisabled} onClick={() => void startProxy()}>
+            {canStartEnable && !h.enabled && (
+              <Button disabled={!!localBusy} onClick={() => void startProxy(true)}>
+                <Icon
+                  name={localBusy === "start-enable" ? "sync" : "bolt"}
+                  size={16}
+                  className={localBusy === "start-enable" ? "animate-spin" : ""}
+                />
+                {localBusy === "start-enable" ? "Starting…" : "Start & enable"}
+              </Button>
+            )}
+            <Button disabled={startDisabled} onClick={() => void startProxy(false)} variant={canStartEnable && !h.enabled ? "ghost" : "primary"}>
               <Icon name={localBusy === "start" ? "sync" : "play_arrow"} size={16} className={localBusy === "start" ? "animate-spin" : ""} />
               {localBusy === "start" ? "Starting…" : "Start"}
             </Button>
             <Button
               variant="danger"
-              disabled={!hr?.managedPid || localBusy === "stop"}
+              disabled={!hr?.managedPid || !!localBusy}
               onClick={() => void stopProxy()}
             >
               <Icon name="stop" size={16} /> Stop
@@ -312,27 +433,39 @@ function HeadroomCard({
               <Icon name="sync" size={16} className={localBusy === "check" ? "animate-spin" : ""} />
               {localBusy === "check" ? "Checking…" : "Check"}
             </Button>
+            <Button variant="ghost" disabled={!!localBusy && localBusy !== "log"} onClick={() => void toggleLog()}>
+              <Icon name="article" size={16} className={localBusy === "log" ? "animate-spin" : ""} />
+              {logOpen ? "Hide log" : "View log"}
+            </Button>
           </div>
-
-          {hr && !hr.installed && (
-            <p className="mt-3 text-[11px] text-text-subtle">
-              Get it from{" "}
-              <a href="https://github.com/chopratejas/headroom" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-                chopratejas/headroom
-              </a>{" "}
-              (Python ≥ 3.10):{" "}
-              <code className="rounded bg-surface-2 px-1">pipx install git+https://github.com/chopratejas/headroom</code>
-            </p>
-          )}
-          {hr?.installed && !hr.localUrl && (
-            <p className="mt-3 text-[11px] text-text-subtle">URL isn&apos;t loopback — start that proxy yourself.</p>
-          )}
 
           {msg && <p className="mt-2 text-[12px] text-danger">{msg}</p>}
           {check && (
             <p className={`mt-2 flex items-center gap-1 text-[12px] ${check.ok ? "text-success" : "text-danger"}`}>
               <Icon name={check.ok ? "check_circle" : "error"} size={14} /> {check.text}
             </p>
+          )}
+
+          {logOpen && (
+            <div className="mt-3 overflow-hidden rounded-brand border border-border-subtle bg-bg">
+              <div className="flex items-center justify-between border-b border-border-subtle px-3 py-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-text-subtle">proxy.log</span>
+                <button
+                  type="button"
+                  disabled={!!localBusy}
+                  onClick={() => {
+                    setLocalBusy("log");
+                    void loadLog().finally(() => setLocalBusy(""));
+                  }}
+                  className="text-[11px] font-medium text-text-muted hover:text-text"
+                >
+                  Refresh
+                </button>
+              </div>
+              <pre className="max-h-40 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-text-muted whitespace-pre-wrap break-all">
+                {logText === null ? "Loading…" : logText || "(empty log)"}
+              </pre>
+            </div>
           )}
         </div>
 
@@ -350,6 +483,103 @@ function HeadroomCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HeadroomPhasePill({ phase }: { phase: HeadroomPhase }) {
+  const map: Record<HeadroomPhase, { tone: Tone; label: string }> = {
+    unknown: { tone: "neutral", label: "not checked" },
+    no_python: { tone: "warn", label: "need Python ≥3.10" },
+    not_installed: { tone: "warn", label: "CLI not installed" },
+    external: { tone: "info", label: "external URL" },
+    down: { tone: "warn", label: "proxy down" },
+    up_off: { tone: "info", label: "proxy up · off" },
+    active: { tone: "live", label: "active" },
+    enabled_down: { tone: "down", label: "enabled · not running" },
+  };
+  const { tone, label } = map[phase];
+  return <Pill $tone={tone}>{label}</Pill>;
+}
+
+function HeadroomGuidance({
+  phase,
+  url,
+  path,
+}: {
+  phase: HeadroomPhase;
+  url: string;
+  path: string | null;
+}) {
+  const items: Record<HeadroomPhase, { tone: "neutral" | "accent" | "warn" | "danger" | "success"; icon: string; text: string }> = {
+    unknown: {
+      tone: "neutral",
+      icon: "info",
+      text: "Click Check (or Start) to detect the headroom CLI — avoids probing on every page visit.",
+    },
+    no_python: {
+      tone: "warn",
+      icon: "warning",
+      text: "Python ≥ 3.10 not found on PATH. Install Python, then the headroom CLI.",
+    },
+    not_installed: {
+      tone: "warn",
+      icon: "warning",
+      text: "Headroom CLI not on PATH. Install it, then Check again.",
+    },
+    external: {
+      tone: "accent",
+      icon: "info",
+      text: `URL isn’t loopback (${url}) — start that proxy yourself; aigloo won’t manage it.`,
+    },
+    down: {
+      tone: "accent",
+      icon: "info",
+      text: path
+        ? `CLI found (${path}). Start the proxy, then enable compression — or use Start & enable.`
+        : "Start the proxy first, then enable compression.",
+    },
+    up_off: {
+      tone: "accent",
+      icon: "info",
+      text: `Proxy is healthy at ${url}. Turn on Enable to compress requests.`,
+    },
+    active: {
+      tone: "success",
+      icon: "check_circle",
+      text: `Compressing through ${url}.`,
+    },
+    enabled_down: {
+      tone: "danger",
+      icon: "error",
+      text: `Compression is ON but nothing is healthy at ${url} — requests are not being compressed. Start the proxy or turn Enable off.`,
+    },
+  };
+  const g = items[phase];
+  const box =
+    g.tone === "danger"
+      ? "border-danger/30 bg-danger/5 text-danger"
+      : g.tone === "warn"
+        ? "border-warning/30 bg-warning/5 text-warning"
+        : g.tone === "success"
+          ? "border-success/30 bg-success/5 text-success"
+          : g.tone === "accent"
+            ? "border-accent/20 bg-accent/5 text-text-subtle"
+            : "border-border-subtle bg-surface-2/50 text-text-subtle";
+  const iconClass =
+    g.tone === "danger"
+      ? "text-danger"
+      : g.tone === "warn"
+        ? "text-warning"
+        : g.tone === "success"
+          ? "text-success"
+          : g.tone === "accent"
+            ? "text-accent"
+            : "text-text-subtle";
+  return (
+    <div className={`flex items-start gap-2 rounded-brand border px-3 py-2 text-[12px] ${box}`}>
+      <Icon name={g.icon} size={14} className={`mt-0.5 flex-none ${iconClass}`} />
+      <span className="leading-relaxed">{g.text}</span>
     </div>
   );
 }
