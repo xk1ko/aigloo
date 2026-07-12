@@ -5,6 +5,11 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **No-shell PATH detection** — CLI Tools and headroom no longer shell out to `where`/`which` (or string `python --version`). They walk PATH + known install dirs with `fs` (`src/platform/resolveBin.ts`); Python version checks use `execFile` only. Removes remaining Windows console flashes on Check/Start and CLI detection
+
 ## [1.1.17] — 2026-07-12
 
 ### Fixed

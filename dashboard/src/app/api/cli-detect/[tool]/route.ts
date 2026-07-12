@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { modalitiesForModel, DEFAULT_CAPABILITIES, type CapsTables } from "@/lib/capabilities";
 import { gateway } from "@/lib/gateway";
+import { isOnPath } from "@/gw/platform/resolveBin.js";
 
 /**
  * Local CLI-tool detection + auto-config. These run in the Next.js server (which,
@@ -17,23 +16,21 @@ import { gateway } from "@/lib/gateway";
  * Only claude-code + opencode auto-configure (the two with a stable local config
  * file we can safely merge into). Others report installed:false → the UI falls
  * back to the manual env block.
+ *
+ * PATH probes use no-shell filesystem walks (platform/resolveBin) — never
+ * `where`/`which`, so Windows does not flash a console.
  */
-const execAsync = promisify(exec);
 
 type Json = Record<string, unknown>;
 
-async function onPath(bin: string): Promise<boolean> {
-  try {
-    const isWin = os.platform() === "win32";
-    const cmd = isWin ? `where ${bin}` : `which ${bin}`;
-    const env = isWin
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH ?? ""}` }
-      : process.env;
-    await execAsync(cmd, { windowsHide: true, env });
-    return true;
-  } catch {
-    return false;
-  }
+function onPath(bin: string): boolean {
+  // Prefer %APPDATA%\npm on Windows so global npm shims (claude.cmd, etc.) resolve
+  // even when the tray/service PATH is thin.
+  const extra =
+    os.platform() === "win32" && process.env.APPDATA
+      ? [path.join(process.env.APPDATA, "npm")]
+      : undefined;
+  return isOnPath(bin, { extraDirs: extra });
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -66,7 +63,7 @@ const CLAUDE_KEYS = [
 ];
 
 async function claudeStatus() {
-  const installed = (await onPath("claude")) || (await fileExists(claudePath()));
+  const installed = onPath("claude") || (await fileExists(claudePath()));
   if (!installed) return { installed: false as const };
   let settings: Json | null = null;
   try {
@@ -133,7 +130,7 @@ const ocDir = () => path.join(os.homedir(), ".config", "opencode");
 const ocPath = () => path.join(ocDir(), "opencode.json");
 
 async function opencodeStatus() {
-  const installed = (await onPath("opencode")) || (await fileExists(ocPath()));
+  const installed = onPath("opencode") || (await fileExists(ocPath()));
   if (!installed) return { installed: false as const };
   let cfg: Json | null = null;
   try {
