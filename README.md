@@ -266,3 +266,13 @@ Inspired by [9router](https://github.com/decolua/9router) — its feature set an
 ## Contributing
 
 Issues and ideas welcome: <https://github.com/xk1ko/aigloo/issues>
+
+---
+
+## Buy me a coffee
+
+If aigloo saved you some tokens (or sanity), feel free to tip.
+
+[![Donate EVM](https://img.shields.io/badge/Donate-EVM-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white)](https://etherscan.io/address/0xB1D01f6972E75Bfd7dba1A1F490C21f3170E12Bd)
+
+`0xB1D01f6972E75Bfd7dba1A1F490C21f3170E12Bd`
