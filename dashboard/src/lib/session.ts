@@ -1,4 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { getDataDir } from "@/gw/appDirs.js";
 
 /**
  * Dashboard session. The cookie carries no secret — just a signed claim
@@ -18,8 +21,22 @@ const COOKIE = `aigloo_session_${_port}`;
 // browser's own expiry enforcement) still dies after this long.
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** Prefer env; fall back to the persisted file the CLI writes so a standalone
+ *  server that lost SESSION_SECRET in its env still validates cookies it sealed
+ *  (or can re-seal) against the same key. Empty secret → every session invalid. */
+let fileSecretCache: string | null | undefined;
+
 function secret(): string {
-  return process.env.SESSION_SECRET ?? "";
+  const fromEnv = process.env.SESSION_SECRET;
+  if (fromEnv) return fromEnv;
+  if (fileSecretCache !== undefined) return fileSecretCache ?? "";
+  try {
+    const s = readFileSync(join(getDataDir(), "session-secret"), "utf8").trim();
+    fileSecretCache = s || null;
+  } catch {
+    fileSecretCache = null;
+  }
+  return fileSecretCache ?? "";
 }
 
 function sign(value: string): string {

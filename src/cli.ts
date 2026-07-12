@@ -149,6 +149,17 @@ const children: ChildProcess[] = [];
  */
 function killTree(c: ChildProcess, sig: NodeJS.Signals = "SIGTERM"): void {
   if (!c.pid || c.killed) return;
+  // Windows has no POSIX process groups — process.kill(-pid) fails and a plain
+  // c.kill() leaves npm/next grandchildren holding the port. taskkill /T walks
+  // the whole tree (same approach as ensurePortFree / killAllAppProcesses).
+  if (process.platform === "win32") {
+    try {
+      execSync(`taskkill /F /T /PID ${c.pid}`, { stdio: "ignore", windowsHide: true, timeout: 5000 });
+    } catch {
+      try { c.kill(); } catch { /* already gone */ }
+    }
+    return;
+  }
   try {
     process.kill(-c.pid, sig);
   } catch {
@@ -482,9 +493,24 @@ function ensureSetup(): void {
       console.log("  building dashboard (first run)…");
       execSync("npm run build", { cwd: dashboardDir, stdio: "inherit" });
     }
+    // Next standalone omits .next/static; without it every /_next/static/* 404s
+    // and the login UI never hydrates (Connect appears to do nothing). Runs on
+    // every boot if assets are missing so local/source installs self-heal.
+    ensureStandaloneStatic();
   }
 
   ensureBetterSqlite3();
+}
+
+/** Copy dashboard/.next/static into standalone/.next/static when missing. */
+function ensureStandaloneStatic(): void {
+  const standaloneServer = join(dashboardDir, ".next", "standalone", "server.js");
+  const staticDst = join(dashboardDir, ".next", "standalone", ".next", "static");
+  if (!existsSync(standaloneServer) || existsSync(staticDst)) return;
+  const script = join(root, "scripts", "prepare-standalone.mjs");
+  if (!existsSync(script)) return;
+  console.log("  finishing standalone assets (static JS/CSS)…");
+  execSync("node scripts/prepare-standalone.mjs", { cwd: root, stdio: "inherit" });
 }
 
 function prompt(q: string): Promise<string> {

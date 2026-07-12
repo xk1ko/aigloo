@@ -4,24 +4,20 @@
  * out of the tarball avoids antivirus false positives (e.g. Kaspersky) and
  * per-arch packaging in the published package.
  *
- * macOS/Linux: install systray2 into ~/.aigloo/runtime/node_modules.
+ * Installs systray2 into ~/.aigloo/runtime/node_modules (same data dir on all OSes).
  * Windows: no binary — a PowerShell NotifyIcon is used instead (see trayWin).
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getDataDir } from "../../appDirs.js";
 
 const SYSTRAY_PKG = "systray2";
 const SYSTRAY_VERSION = "2.1.4";
 
-/** ~/.aigloo (or %APPDATA%/aigloo on Windows) — holds the tray runtime. */
+/** <dataDir>/runtime — tray binary + optional native deps (same home as config). */
 export function getRuntimeDir(): string {
-  const base =
-    process.platform === "win32"
-      ? process.env.APPDATA || homedir()
-      : homedir();
-  return join(base, process.platform === "win32" ? "aigloo" : ".aigloo", "runtime");
+  return join(getDataDir(), "runtime");
 }
 
 export function getRuntimeNodeModules(): string {

@@ -65,24 +65,28 @@ export class AuthStore {
 
   /** Cheap read of the current password version without booting a full
    *  AuthStore/gateway instance — safe to call from proxy on every request.
-   *  Cached by mtime so the hot path (every nav/prefetch) skips the
+   *  Cached by mtime+size so the hot path (every nav/prefetch) skips the
    *  readFileSync+JSON.parse unless auth.json actually changed on disk.
+   *  Size is included because Windows can keep the same mtimeMs across
+   *  rapid rewrites (ms precision).
    *  Returns "" if no auth.json exists yet (admin disabled). */
   static currentVersion(dataDir: string): string {
     const file = join(dataDir, "auth.json");
     try {
-      const mtimeMs = statSync(file).mtimeMs;
+      const st = statSync(file);
       const cached = AuthStore.versionCache.get(file);
-      if (cached && cached.mtimeMs === mtimeMs) return cached.version;
+      if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+        return cached.version;
+      }
       const rec = JSON.parse(readFileSync(file, "utf8")) as AuthRecord;
       const version = rec.version ?? "";
-      AuthStore.versionCache.set(file, { mtimeMs, version });
+      AuthStore.versionCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, version });
       return version;
     } catch {
       return "";
     }
   }
-  private static versionCache = new Map<string, { mtimeMs: number; version: string }>();
+  private static versionCache = new Map<string, { mtimeMs: number; size: number; version: string }>();
 
   /** In-memory store seeded from a password — for tests (file under tmpdir). */
   static memory(seed: string): AuthStore {
@@ -105,6 +109,18 @@ export class AuthStore {
     mkdirSync(dirname(this.file), { recursive: true });
     writeFileSync(this.file, JSON.stringify(rec));
     this.record = rec;
+    // Keep currentVersion()'s cache coherent after our own write (mtime can
+    // stay equal on Windows for same-ms rewrites).
+    try {
+      const st = statSync(this.file);
+      AuthStore.versionCache.set(this.file, {
+        mtimeMs: st.mtimeMs,
+        size: st.size,
+        version: rec.version,
+      });
+    } catch {
+      AuthStore.versionCache.delete(this.file);
+    }
   }
 
   /** Constant-time check of a presented password against the stored hash. */

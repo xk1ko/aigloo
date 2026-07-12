@@ -1,6 +1,6 @@
 {
   "name": "aigloo",
-  "version": "1.1.16",
+  "version": "1.1.17",
   "type": "module",
   "description": "Self-hosted AI gateway. Route, translate and track requests across providers, with access keys, budgets, and a built-in dashboard.",
   "keywords": [
@@ -46,7 +46,7 @@
     "dev": "./dev.sh",
     "start": "node dist/cli.js",
     "run:all": "tsx src/cli.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

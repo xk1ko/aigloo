@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { sealSession, SESSION_COOKIE } from "@/lib/session";
 import { gateway } from "@/lib/gateway";
 import { gw } from "@/lib/gw";
@@ -25,13 +24,15 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: r.error ?? "could not change password" }, { status: r.status || 400 });
   }
 
-  const jar = await cookies();
-  jar.set(SESSION_COOKIE, sealSession(gw().auth.version), {
+  // Same cookie policy as /api/login — never force Secure on plain HTTP
+  // localhost (NODE_ENV=production in the standalone build would break it).
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE, sealSession(gw().auth.version), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: req.headers.get("x-forwarded-proto") === "https",
     path: "/",
     maxAge: 60 * 60 * 12,
   });
-  return NextResponse.json({ ok: true });
+  return res;
 }

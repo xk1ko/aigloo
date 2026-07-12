@@ -5,6 +5,16 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.17] — 2026-07-12
+
+### Fixed
+- **Login Connect does nothing (all OSes, local/source builds)** — Next `output: "standalone"` never copies `.next/static` into the standalone tree. Local builds skipped `prepare-standalone.mjs` (only ran on npm publish), so `/_next/static/*` 404'd, React never hydrated, and the Connect button was dead HTML. Now `dashboard` build always runs `prepare-standalone.mjs`, and `ensureSetup` self-heals missing static on boot
+- **Windows: `npm run build` failed** — script used `rm -rf dist` (Unix-only). Now uses a Node one-liner that works on Windows/macOS/Linux
+- **Windows: AuthStore upgrade path returned stale empty version** — `currentVersion()` cached by `mtimeMs`; rapid rewrite after stamping `version` can keep the same ms on Windows → proxy still saw `""`. `persist()` now updates the cache (mtime+size)
+- **Data dir is `~/.aigloo` on every OS** (`C:\Users\<name>\.aigloo` on Windows) — tray + gateway share one home. One-time migrate from legacy `%APPDATA%\aigloo` if home is empty
+- **Windows: Ctrl-C left orphan next/npm children** — `killTree` used POSIX `process.kill(-pid)` which fails on Windows. Now uses `taskkill /F /T /PID`
+- **Session cookie reliability** — set on `NextResponse` (not only `cookies()`); `SESSION_SECRET` falls back to `~/.aigloo/session-secret` if env is missing; password-change route no longer forces `Secure` cookies on HTTP localhost in production builds
+
 ## [1.1.16] — 2026-07-12
 
 ### Fixed
@@ -47,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows: dashboard crashed on Node < 22.5** — `--experimental-sqlite` flag was passed unconditionally. On Node < 22.5 the flag doesn't exist → Node exits with "bad option" → dashboard never starts → `ERR_CONNECTION_REFUSED`. Now gated on `process.versions.node >= 22.5`; older Node silently falls through to `sql.js` (WASM) driver
 - **Tray icon never appeared if dashboard failed** — tray was initialized AFTER `waitForGateway` (30s timeout). If the dashboard crashed on boot, the tray was never created → user had no way to quit or know what happened. Now tray inits BEFORE `waitForGateway` — icon shows immediately, even if the server is still starting or has crashed
 - **Tray mode: process exited on dashboard failure** — if `waitForGateway` timed out, `shutdown()` killed the tray and `process.exit(1)` quit. Now in tray mode, keeps the tray alive — crash handlers continue auto-restarting the dashboard, user can Quit from the tray
-- **No crash log in background/tray mode** — stderr was captured in-memory but never persisted. In tray mode (detached, `stdio: "ignore"`), crash details were completely lost. Now writes to `~/.aigloo/aigloo-crash.log` (or `%APPDATA%\aigloo\` on Windows) on every crash
+- **No crash log in background/tray mode** — stderr was captured in-memory but never persisted. In tray mode (detached, `stdio: "ignore"`), crash details were completely lost. Now writes to `~/.aigloo/aigloo-crash.log` on every crash
 - **`better-sqlite3` + `systray2` install conflict** — both used `--no-save` in `~/.aigloo/runtime/`. Each `npm install` pruned packages not in `package.json` — second install killed first's packages. Now uses `--save` (default) so both persist in `package.json` dependencies
 - **Windows tray init silently swallowed errors** — `catch { return false }` hid all errors. Now logs `tray init error: <message>` to stderr
 - **`npx` spawn broken on Windows in dev mode** — `hideToTray` used `spawn("npx", ...)` without `shell: true`. On Windows `npx` is `npx.cmd` and needs a shell to resolve. Now uses `npx.cmd` + `shell: true` on Windows

@@ -233,9 +233,9 @@ Admin password and provider keys never reach the browser — the dashboard proxi
 | OS | Path |
 |----|------|
 | macOS / Linux | `~/.aigloo/` |
-| Windows | `%APPDATA%\aigloo\` |
+| Windows | `C:\Users\<name>\.aigloo\` (`%USERPROFILE%\.aigloo`) |
 
-Contains `config.yaml` and `usage.sqlite`. Delete the folder to reset everything.
+Same folder name on every OS. Contains `config.yaml` and `usage.sqlite`. Delete the folder to reset everything.
 
 ---
 

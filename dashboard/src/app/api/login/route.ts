@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { sealSession, SESSION_COOKIE } from "@/lib/session";
 import { gw } from "@/lib/gw";
 
@@ -24,13 +23,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "wrong password" }, { status: 401 });
   }
 
-  const jar = await cookies();
-  jar.set(SESSION_COOKIE, sealSession(g.auth.version), {
+  // Set cookie on the response object (not cookies() from next/headers).
+  // Some Next/browser combos drop jar.set() from route handlers; attaching to
+  // NextResponse is the reliable path so the subsequent hard nav to / carries
+  // the session and the proxy doesn't bounce back to /login.
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE, sealSession(g.auth.version), {
     httpOnly: true,
     sameSite: "lax",
+    // Only Secure over real HTTPS. Localhost HTTP must stay non-secure or
+    // browsers refuse to store the cookie → login appears to do nothing.
     secure: req.headers.get("x-forwarded-proto") === "https",
     path: "/",
     maxAge: 60 * 60 * 12,
   });
-  return NextResponse.json({ ok: true });
+  return res;
 }

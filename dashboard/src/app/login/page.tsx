@@ -26,6 +26,7 @@ export default function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ password }),
         signal: ctrl.signal,
       });
@@ -35,10 +36,12 @@ export default function LoginPage() {
         // payloads for every page visited pre-login, and refresh() only
         // busts the cache for the current route. A full navigation clears
         // it all, so subsequent Link clicks don't bounce back to /login.
-        window.location.href = "/";
+        // Use replace so Back doesn't return to a dead login form.
+        window.location.replace("/");
+        return;
       } else {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? "login failed");
+        setError(body.error ?? `login failed (${res.status})`);
         setBusy(false);
       }
     } catch {
