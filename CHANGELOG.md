@@ -5,6 +5,11 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] — 2026-07-12
+
+### Fixed
+- **Cross-platform npm pack** — Dashboard standalone no longer ships host-native `sharp` / `@img/*` (e.g. `sharp-win32-x64` when publishing from Windows). Images are `unoptimized`; prepare-standalone strips the native stack so Linux/macOS/Windows installs share one package
+
 ## [1.2.2] — 2026-07-12
 
 ### Added

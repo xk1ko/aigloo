@@ -6,6 +6,8 @@
  *   - Copy dashboard/.next/static into standalone (Next does not put it there)
  *   - Drop unused standalone/src and strip dist/ *.map / *.d.ts
  *   - Migrate legacy standalone/vendor → node_modules (v1.1.15 rename workaround)
+ *   - Strip platform-native sharp/@img/detect-libc (cross-OS npm pack; dashboard
+ *     uses images.unoptimized so the optimizer is not required at runtime)
  *   - Fail hard if standalone/node_modules/next is missing
  *
  * Why we do NOT rename node_modules → vendor:
@@ -85,6 +87,25 @@ if (existsSync(straySrc)) {
   rmSync(straySrc, { recursive: true, force: true });
   console.log("  prepare-standalone: removed standalone/src");
 }
+
+// Native image stack is host-platform only (e.g. sharp-win32-x64 when publishing
+// from Windows). Dashboard does not need the optimizer — strip so Linux/macOS
+// installs are not stuck with a Windows binary (and vice versa).
+const SHARP_DROP = new Set(["sharp", "@img", "detect-libc"]);
+function stripSharpTree(dir, rel = "") {
+  if (!existsSync(dir)) return;
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const f = join(dir, e.name);
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory() && SHARP_DROP.has(e.name)) {
+      rmSync(f, { recursive: true, force: true });
+      console.log(`  prepare-standalone: removed node_modules/${r} (cross-platform)`);
+      continue;
+    }
+    if (e.isDirectory()) stripSharpTree(f, r);
+  }
+}
+stripSharpTree(nm);
 
 function stripMapsAndDts(dir) {
   if (!existsSync(dir)) return;
