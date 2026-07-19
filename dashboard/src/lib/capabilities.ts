@@ -7,6 +7,7 @@
  *  `*gpt-5.6-sol*` base models — see `levelsForModel`. `none` disables thinking. */
 export const BASE_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export type ThinkingLevel = (typeof BASE_THINKING_LEVELS)[number] | "max";
+type ThinkingEffort = Exclude<ThinkingLevel, "none">;
 
 export interface Caps {
   vision: boolean;
@@ -21,6 +22,7 @@ export interface Caps {
   thinkingFormat: string | null;
   thinkingCanDisable: boolean;
   thinkingRange: { min: number; max: number } | null;
+  thinkingLevels: readonly ThinkingEffort[] | null;
   contextWindow: number;
   maxOutput: number;
 }
@@ -54,6 +56,7 @@ export const DEFAULT_CAPABILITIES: Caps = {
   thinkingFormat: null,
   thinkingCanDisable: true,
   thinkingRange: null,
+  thinkingLevels: null,
   contextWindow: 200000,
   maxOutput: 64000,
 };
@@ -118,13 +121,13 @@ const SUFFIX_RE = /^(.*)\(([^()]+)\)\s*$/;
 /** Strip a terminal `(level)` / `(budget)` thinking suffix from a model ref. */
 export function stripModelSuffix(model: string): string {
   const m = model.match(SUFFIX_RE);
-  return m ? (m[1]!.trim()) : model;
+  return m?.[1]?.trim() ?? model;
 }
 
 /**
  * Thinking levels offered for a model ref. Returns the empty array for
- * non-reasoning models. `max` is appended only when the base model (suffix
- * stripped, vendor prefix stripped) matches `*gpt-5.6-sol*`.
+ * non-reasoning models. Exact model metadata wins over the generic fallback.
+ * `max` remains a `*gpt-5.6-sol*` alias.
  */
 export function levelsForModel(ref: string, tables: CapsTables): readonly ThinkingLevel[] {
   const stripped = stripModelSuffix(ref);
@@ -133,8 +136,10 @@ export function levelsForModel(ref: string, tables: CapsTables): readonly Thinki
   const model = slash > 0 ? stripped.slice(slash + 1) : stripped;
   const caps = getCapabilitiesForModel(provider, model, tables);
   if (!caps.reasoning) return [];
-  const levels = caps.thinkingCanDisable ? BASE_THINKING_LEVELS : BASE_THINKING_LEVELS.slice(1);
-  return matchPattern("*gpt-5.6-sol*", model) ? [...levels, "max"] : levels;
+  const exactLevels = caps.thinkingLevels;
+  const onLevels = exactLevels ?? BASE_THINKING_LEVELS.slice(1);
+  const levels = caps.thinkingCanDisable ? ["none" as const, ...onLevels] : onLevels;
+  return !exactLevels && matchPattern("*gpt-5.6-sol*", model) ? [...levels, "max"] : levels;
 }
 
 export function selectedModelVariant(base: string, selected: readonly string[]): string | null {

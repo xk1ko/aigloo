@@ -27,6 +27,8 @@
  * Safe floor — every resolved result is merged over this so consumers
  * never need null-checks. Most modern LLMs meet these limits.
  */
+export type ThinkingEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface Caps {
   vision: boolean;
   pdf: boolean;
@@ -40,6 +42,7 @@ export interface Caps {
   thinkingFormat: string | null;
   thinkingCanDisable: boolean;
   thinkingRange: { min: number; max: number } | null;
+  thinkingLevels: readonly ThinkingEffort[] | null;
   contextWindow: number;
   maxOutput: number;
 }
@@ -74,6 +77,7 @@ export const DEFAULT_CAPABILITIES: Caps = {
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
+  thinkingLevels: null,
   // limits (tokens)
   contextWindow: 200000,
   maxOutput: 64000,

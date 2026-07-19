@@ -96,6 +96,23 @@ describe("levelsForModel", () => {
     const tables = tablesWith([{ pattern: "*always-thinking*", caps: { reasoning: true, thinkingCanDisable: false } }]);
     expect(levelsForModel("provider/always-thinking", tables)).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
   });
+
+  it("returns only explicitly supported levels", () => {
+    const tables = tablesWith([{
+      pattern: "*medium-high-only*",
+      caps: { reasoning: true, thinkingCanDisable: false, thinkingLevels: ["medium", "high"] },
+    }]);
+    expect(levelsForModel("provider/medium-high-only", tables)).toEqual(["medium", "high"]);
+  });
+
+  it("adds none to explicitly supported levels when thinking can be disabled", () => {
+    const tables = tablesWith([{
+      pattern: "*medium-high-optional*",
+      caps: { reasoning: true, thinkingLevels: ["medium", "high"] },
+    }]);
+    expect(levelsForModel("provider/medium-high-optional", tables)).toEqual(["none", "medium", "high"]);
+  });
+
 });
 
 describe("thinking model values", () => {
