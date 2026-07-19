@@ -5,6 +5,14 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] — 2026-07-20
+
+### Removed
+- **Thinking-level model picker** — Removed the 1.2.4 picker, model-reference transport, and `max` effort changes because OpenAI-compatible providers do not expose enough metadata to safely choose between `reasoning_effort` and model-native thinking fields
+
+### Fixed
+- **Provider-native thinking payloads** — Client suffixes retain their existing native thinking format; stale picker suffixes saved in 1.2.4 are stripped and ignored
+
 ## [1.2.4] — 2026-07-20
 
 ### Added
@@ -806,4 +814,3 @@ dashboard.
 - Installable as a global npm package; first run self-bootstraps (seeds config,
   installs dashboard deps, builds the dashboard).
 - Brand: `a»` mark (favicon + sidebar) and an `ai»getwey` wordmark.
-

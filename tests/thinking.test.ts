@@ -90,14 +90,15 @@ describe("applyThinking format matrix", () => {
     expect(out.thinking).toBeUndefined();
   });
 
+  it("suffixed GLM keeps the native Z.ai payload over OpenAI transport", () => {
+    const out = apply("openai", "glm-5.2(high)", {}, "Huki");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
   it("openai gpt-5 level → reasoning_effort", () => {
     const out = apply("openai", "gpt-5", { reasoning_effort: "medium" }, "openai");
     expect(out.reasoning_effort).toBe("medium");
-  });
-
-  it("openai gpt-5.6-sol max suffix → xhigh reasoning_effort", () => {
-    const out = apply("openai", "gpt-5.6-sol(max)", {}, "openai");
-    expect(out.reasoning_effort).toBe("xhigh");
   });
 
   it("openai 'none' disable → reasoning_effort none", () => {
