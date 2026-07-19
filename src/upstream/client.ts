@@ -7,7 +7,7 @@ import { request } from "undici";
 import type { Provider } from "../config.js";
 import type { CanonicalRequest, CanonicalResponse } from "../core/canonical.js";
 import { adapterFor } from "../adapters/index.js";
-import { applyThinking, type ThinkingConfig } from "../translator/thinkingUnified.js";
+import { applyThinking, parseSuffix, type ThinkingConfig } from "../translator/thinkingUnified.js";
 
 export interface UpstreamError extends Error {
   status?: number;
@@ -69,7 +69,11 @@ function buildBody(
   thinkingIntent?: ThinkingConfig | null,
 ): unknown {
   const adapter = adapterFor(provider.format);
-  const upstreamReq: CanonicalRequest = { ...req, model, stream };
+  // Strip any `model(level)` thinking suffix before the body sees it — upstream
+  // providers don't know about aigloo's suffix convention. The original suffixed
+  // model is still passed to applyThinking below so the suffix drives intent.
+  const { cleanModel } = parseSuffix(model);
+  const upstreamReq: CanonicalRequest = { ...req, model: cleanModel, stream };
   const out = adapter.requestFromCanonical(upstreamReq) as Record<string, unknown>;
   // OpenAI-compatible streams omit usage entirely unless you opt in — without this
   // every streamed call through an openai-format provider logs 0 tokens in/out
@@ -82,7 +86,8 @@ function buildBody(
   }
   // Normalize thinking into THIS provider's native format, keyed by the upstream
   // model's capabilities. No-op for non-reasoning models. Runs per-attempt so each
-  // provider in a fallback chain gets the right shape.
+  // provider in a fallback chain gets the right shape. Pass the original (possibly
+  // suffixed) model so parseSuffix inside applyThinking can extract the override.
   applyThinking(provider.format, model, out, provider.id, thinkingIntent);
   return out;
 }
@@ -102,7 +107,10 @@ export async function callUpstream(
   model: string,
   opts: { stream: boolean; key?: string; signal?: AbortSignal; thinkingIntent?: ThinkingConfig | null },
 ): Promise<NonStreamResult | StreamResult> {
-  const url = buildUrl(provider, model, opts.stream);
+  // Gemini puts the model in the URL path; strip the thinking suffix so the
+  // upstream URL is clean. buildBody does its own parseSuffix for the body.
+  const { cleanModel } = parseSuffix(model);
+  const url = buildUrl(provider, cleanModel, opts.stream);
   const headers = buildHeaders(provider, opts.key);
   const body = buildBody(provider, req, model, opts.stream, opts.thinkingIntent);
 
@@ -253,4 +261,4 @@ export async function pingProvider(provider: Provider, key: string | undefined, 
   }
 }
 
-export { buildHeaders, buildUrl };
+export { buildHeaders, buildUrl, buildBody };

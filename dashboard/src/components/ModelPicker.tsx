@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { CapacityBadges } from "@/components/CapacityBadges";
+import { useCapsTables } from "@/lib/useCaps";
+import {
+  levelsForModel,
+  selectedModelVariant,
+  thinkingLevelOf,
+  withThinkingLevel,
+  type ThinkingLevel,
+} from "@/lib/capabilities";
 
 export interface ModelGroup {
   label: string;
@@ -13,6 +21,11 @@ export interface ModelGroup {
  * aigloo-style model picker: a search box + provider-grouped chips you click to
  * toggle in/out of a selection. Used by the combo form and the CLI-tool model
  * selection so both add models the same way (click to add, click again to drop).
+ *
+ * With `thinkingLevels` enabled, each selected reasoning model shows an inline
+ * level `<select>` so the user can emit `provider/model(level)` instead of the
+ * bare `provider/model`. `none` is an explicit disable; the empty option is the
+ * model's default (no suffix). `max` is only offered for `*gpt-5.6-sol*`.
  */
 export function ModelPicker({
   title = "Add models",
@@ -24,6 +37,8 @@ export function ModelPicker({
   onClose,
   showThinkingHint = false,
   singleSelect = false,
+  thinkingLevels = false,
+  onReplace,
 }: {
   title?: string;
   note?: string;
@@ -38,8 +53,20 @@ export function ModelPicker({
   /** Single-select mode: hides Select all / Done / count — picker closes on
    *  first click (budget scope picker uses this). */
   singleSelect?: boolean;
+  /** Opt-in: show a per-chip thinking-level `<select>` for selected reasoning
+   *  models. Emits `provider/model(level)` via `onReplace` (or two `onToggle`
+   *  calls as a fallback). When combined with `singleSelect`, the picker no
+   *  longer auto-closes on first click — a Done button appears so the user can
+   *  pick a level before confirming. */
+  thinkingLevels?: boolean;
+  /** Atomic replace of one selected value with another (level change). Used
+   *  only when `thinkingLevels` is true. Falls back to `onToggle(old)` then
+   *  `onToggle(new)` when omitted — fine for multi-select, but single-select
+   *  callers should provide this so the picker doesn't close mid-change. */
+  onReplace?: (oldValue: string, newValue: string) => void;
 }) {
   const [q, setQ] = useState("");
+  const capsTables = useCapsTables();
   const needle = q.trim().toLowerCase();
   const filtered = groups
     .map((g) => ({
@@ -47,7 +74,9 @@ export function ModelPicker({
       items: needle ? g.items.filter((i) => i.value.toLowerCase().includes(needle)) : g.items,
     }))
     .filter((g) => g.items.length > 0);
-  const sel = new Set(selected);
+  function variantOf(base: string): string | null {
+    return thinkingLevels ? selectedModelVariant(base, selected) : (selected.includes(base) ? base : null);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-6 sm:p-10" onClick={onClose}>
@@ -82,8 +111,9 @@ export function ModelPicker({
           ) : (
             <div className="space-y-4">
               {filtered.map((g) => {
-                const allOn = g.items.length > 0 && g.items.every((it) => sel.has(it.value));
-                const someOn = g.items.some((it) => sel.has(it.value));
+                const variants = g.items.map((it) => variantOf(it.value));
+                const allOn = g.items.length > 0 && variants.every((v) => v !== null);
+                const someOn = variants.some((v) => v !== null);
                 return (
                   <div key={g.label}>
                     <div className="mb-1.5 flex items-center gap-2">
@@ -93,9 +123,10 @@ export function ModelPicker({
                       {!singleSelect && (
                         <button
                           type="button"
-                          onClick={() => g.items.forEach((it) => {
-                            if (allOn) onToggle(it.value);
-                            else if (!sel.has(it.value)) onToggle(it.value);
+                          onClick={() => g.items.forEach((it, i) => {
+                            const v = variants[i];
+                            if (allOn && v) onToggle(v);
+                            else if (!allOn && !v) onToggle(it.value);
                           })}
                           className="text-[11px] font-medium text-text-muted transition-colors hover:text-accent"
                         >
@@ -104,22 +135,50 @@ export function ModelPicker({
                       )}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {g.items.map((it) => {
-                        const on = sel.has(it.value);
+                      {g.items.map((it, i) => {
+                        const variant = variants[i];
+                        const on = variant !== null;
+                        const levels: readonly ThinkingLevel[] =
+                          thinkingLevels && capsTables ? levelsForModel(it.value, capsTables) : [];
+                        const showLevel = thinkingLevels && on && levels.length > 0;
+                        const currentLevel = variant ? thinkingLevelOf(variant) : "";
                         return (
-                          <button
-                            key={it.value}
-                            type="button"
-                            onClick={() => onToggle(it.value)}
-                            className={`inline-flex items-center gap-1 rounded-brand border px-2 py-1 text-[12px] transition-colors ${
-                              on ? "border-accent bg-accent-soft text-accent" : "border-border bg-bg text-text-muted hover:border-text-subtle hover:text-text"
-                            }`}
-                          >
-                            {on && <Icon name="check" size={12} />}
-                            <span className="tnum">{it.label}</span>
-                            <CapacityBadges model={it.value} size={13} />
-                            {it.tag && <span className="rounded bg-surface-2 px-1 text-[11px] text-text-subtle">{it.tag}</span>}
-                          </button>
+                          <span key={it.value} className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => onToggle(variant ?? it.value)}
+                              className={`inline-flex items-center gap-1 rounded-brand border px-2 py-1 text-[12px] transition-colors ${
+                                on ? "border-accent bg-accent-soft text-accent" : "border-border bg-bg text-text-muted hover:border-text-subtle hover:text-text"
+                              }`}
+                            >
+                              {on && <Icon name="check" size={12} />}
+                              <span className="tnum">{it.label}</span>
+                              <CapacityBadges model={it.value} size={13} />
+                              {it.tag && <span className="rounded bg-surface-2 px-1 text-[11px] text-text-subtle">{it.tag}</span>}
+                            </button>
+                            {showLevel && (
+                              <select
+                                aria-label={`Thinking level for ${it.label}`}
+                                value={currentLevel}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const level = e.target.value;
+                                  const newV = withThinkingLevel(it.value, level);
+                                  const oldV = variant ?? it.value;
+                                  if (oldV === newV) return;
+                                  if (onReplace) onReplace(oldV, newV);
+                                  else { onToggle(oldV); onToggle(newV); }
+                                }}
+                                className="rounded-brand border border-border bg-bg px-1.5 py-1 text-[11px] text-text focus:border-accent focus:outline-none"
+                              >
+                                <option value="">default</option>
+                                {levels.map((l) => (
+                                  <option key={l} value={l}>{l}</option>
+                                ))}
+                              </select>
+                            )}
+                          </span>
                         );
                       })}
                     </div>
@@ -132,7 +191,7 @@ export function ModelPicker({
 
         {showThinkingHint && null}
 
-        {!singleSelect && (
+        {(!singleSelect || thinkingLevels) && (
           <div className="flex items-center justify-between border-t border-border-subtle px-4 py-3">
             <div className="flex items-center gap-3">
               <span className="tnum text-[12px] text-text-subtle">{selected.length} selected</span>
@@ -141,15 +200,17 @@ export function ModelPicker({
                   type="button"
                   onClick={() => {
                     const all = filtered.flatMap((g) => g.items.map((it) => it.value));
-                    const allOn = all.every((v) => sel.has(v));
-                    all.forEach((v) => {
-                      if (allOn && sel.has(v)) onToggle(v);
-                      else if (!allOn && !sel.has(v)) onToggle(v);
+                    const allVariants = all.map((v) => variantOf(v));
+                    const allOn = allVariants.every((v) => v !== null);
+                    all.forEach((v, i) => {
+                      const variant = allVariants[i];
+                      if (allOn && variant) onToggle(variant);
+                      else if (!allOn && !variant) onToggle(v);
                     });
                   }}
                   className="text-[12px] font-medium text-text-muted transition-colors hover:text-accent"
                 >
-                  {filtered.flatMap((g) => g.items).every((it) => sel.has(it.value)) ? "Clear all" : "Select all"}
+                  {filtered.flatMap((g) => g.items).every((it) => variantOf(it.value) !== null) ? "Clear all" : "Select all"}
                 </button>
               )}
             </div>

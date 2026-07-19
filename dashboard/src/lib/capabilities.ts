@@ -3,6 +3,11 @@
  * Backend (`src/providers/capabilities.ts`) is single source of truth.
  */
 
+/** Thinking levels offered by the picker, low → high. `max` is gated to
+ *  `*gpt-5.6-sol*` base models — see `levelsForModel`. `none` disables thinking. */
+export const BASE_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ThinkingLevel = (typeof BASE_THINKING_LEVELS)[number] | "max";
+
 export interface Caps {
   vision: boolean;
   pdf: boolean;
@@ -106,4 +111,43 @@ export function modalitiesForModel(
   if (c.imageOutput) output.push("image");
   if (c.audioOutput) output.push("audio");
   return { input, output };
+}
+
+const SUFFIX_RE = /^(.*)\(([^()]+)\)\s*$/;
+
+/** Strip a terminal `(level)` / `(budget)` thinking suffix from a model ref. */
+export function stripModelSuffix(model: string): string {
+  const m = model.match(SUFFIX_RE);
+  return m ? (m[1]!.trim()) : model;
+}
+
+/**
+ * Thinking levels offered for a model ref. Returns the empty array for
+ * non-reasoning models. `max` is appended only when the base model (suffix
+ * stripped, vendor prefix stripped) matches `*gpt-5.6-sol*`.
+ */
+export function levelsForModel(ref: string, tables: CapsTables): readonly ThinkingLevel[] {
+  const stripped = stripModelSuffix(ref);
+  const slash = stripped.indexOf("/");
+  const provider = slash > 0 ? stripped.slice(0, slash) : null;
+  const model = slash > 0 ? stripped.slice(slash + 1) : stripped;
+  const caps = getCapabilitiesForModel(provider, model, tables);
+  if (!caps.reasoning) return [];
+  const levels = caps.thinkingCanDisable ? BASE_THINKING_LEVELS : BASE_THINKING_LEVELS.slice(1);
+  return matchPattern("*gpt-5.6-sol*", model) ? [...levels, "max"] : levels;
+}
+
+export function selectedModelVariant(base: string, selected: readonly string[]): string | null {
+  if (selected.includes(base)) return base;
+  const prefix = `${base}(`;
+  return selected.find((value) => value.startsWith(prefix) && value.endsWith(")")) ?? null;
+}
+
+export function thinkingLevelOf(model: string): string {
+  const match = model.match(SUFFIX_RE);
+  return match?.[2]?.trim().toLowerCase() ?? "";
+}
+
+export function withThinkingLevel(base: string, level: string): string {
+  return level ? `${stripModelSuffix(base)}(${level})` : stripModelSuffix(base);
 }

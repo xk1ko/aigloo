@@ -699,16 +699,18 @@ export function ToolDetail({ id }: { id: string }) {
       {pickerOpen && pickerSlot && (
         <ModelPicker
           title={`Pick model — ${pickerSlot}`}
-          note="Click a model to select it for this slot."
+          note="Click a model to select it for this slot. Pick a thinking level if needed, then Done."
           groups={groups}
           selected={slots[pickerSlot] ? [slots[pickerSlot]] : []}
           onToggle={(v) => {
             setSlots((s) => ({ ...s, [pickerSlot]: s[pickerSlot] === v ? "" : v }));
-            setPickerOpen(false);
-            setPickerSlot(null);
+          }}
+          onReplace={(oldV, newV) => {
+            setSlots((s) => ({ ...s, [pickerSlot]: s[pickerSlot] === oldV ? newV : s[pickerSlot] }));
           }}
           onClose={() => { setPickerOpen(false); setPickerSlot(null); }}
           singleSelect
+          thinkingLevels
         />
       )}
       {pickerOpen && !pickerSlot && (
@@ -718,7 +720,17 @@ export function ToolDetail({ id }: { id: string }) {
           groups={groups}
           selected={picked}
           onToggle={togglePicked}
+          onReplace={(oldV, newV) => {
+            setPicked((p) => {
+              const idx = p.indexOf(oldV);
+              if (idx === -1) return p.includes(newV) ? p : [...p, newV];
+              const next = [...p];
+              next[idx] = newV;
+              return next;
+            });
+          }}
           onClose={() => setPickerOpen(false)}
+          thinkingLevels
         />
       )}
     </div>

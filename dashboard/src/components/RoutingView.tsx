@@ -334,6 +334,17 @@ function RouteForm({ providers, onDone, initial, onCancel }: { providers: Provid
     setEntries((e) => (e.includes(v) ? e.filter((x) => x !== v) : [...e, v]));
   }
 
+  function replaceEntry(oldV: string, newV: string) {
+    setErr("");
+    setEntries((e) => {
+      const idx = e.indexOf(oldV);
+      if (idx === -1) return e.includes(newV) ? e : [...e, newV];
+      const next = [...e];
+      next[idx] = newV;
+      return next;
+    });
+  }
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleDragEnd(e: DragEndEvent) {
@@ -438,7 +449,9 @@ function RouteForm({ providers, onDone, initial, onCancel }: { providers: Provid
           groups={groups}
           selected={entries}
           onToggle={toggle}
+          onReplace={replaceEntry}
           onClose={() => setPickerOpen(false)}
+          thinkingLevels
         />
       )}
     </form>
