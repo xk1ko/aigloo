@@ -183,7 +183,7 @@ function applyFormat(fmt: string, body: Body, cfg: ThinkingConfig, caps: Caps): 
         break;
       }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
+      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {

@@ -95,6 +95,11 @@ describe("applyThinking format matrix", () => {
     expect(out.reasoning_effort).toBe("medium");
   });
 
+  it("openai gpt-5.6-sol max suffix → xhigh reasoning_effort", () => {
+    const out = apply("openai", "gpt-5.6-sol(max)", {}, "openai");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+
   it("openai 'none' disable → reasoning_effort none", () => {
     const out = apply("openai", "gpt-5", { reasoning_effort: "none" }, "openai");
     expect(out.reasoning_effort).toBe("none");
