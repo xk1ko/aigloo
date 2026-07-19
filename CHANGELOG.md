@@ -5,10 +5,15 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.4] — 2026-07-20
+
+### Added
+- **Thinking levels in model pickers** — Combo and CLI Tool model pickers expose reasoning levels, preserve the selected level in model references, and send clean model IDs with provider-native effort settings upstream
 
 ### Fixed
 - **Admin model pings in Usage** — Provider “test model” calls record as access key `admin-ping` (shown as **admin-ping**) instead of **(no key)**
+- **OpenAI max thinking effort** — `max` remains selectable for `gpt-5.6-sol` models and is translated to OpenAI’s native `xhigh` effort
+- **Model-specific thinking levels** — Models can declare exact supported levels, so restricted models show only valid choices such as `medium` and `high`
 
 ## [1.2.3] — 2026-07-12
 
