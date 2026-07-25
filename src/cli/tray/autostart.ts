@@ -4,17 +4,30 @@
  *
  *   macOS  → ~/Library/LaunchAgents/com.aigloo.autostart.plist (launchd)
  *   Windows→ %APPDATA%/.../Startup/aigloo.vbs
- *   Linux  → ~/.config/autostart/aigloo.desktop
+ *   Linux  → desktop session: ~/.config/autostart/aigloo.desktop (XDG)
+ *            headless server:  a systemd service (system unit as root, else a
+ *                              per-user unit + linger) so it starts on boot
+ *                              without a graphical login.
  */
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 
 const APP_NAME = "aigloo";
 const APP_LABEL = "com.aigloo.autostart";
+const SYSTEMD_UNIT = `${APP_NAME}.service`;
+const SYSTEMD_SYSTEM_PATH = `/etc/systemd/system/${SYSTEMD_UNIT}`;
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Per-user systemd unit path (~/.config/systemd/user/aigloo.service). */
+function systemdUserPath(): string {
+  return join(homedir(), ".config", "systemd", "user", SYSTEMD_UNIT);
+}
+function xdgAutostartPath(): string {
+  return join(homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
+}
 
 /** Absolute path to the launcher script (dist/cli.js). */
 function getCliPath(explicit?: string): string | null {
@@ -37,14 +50,14 @@ export function isAutoStartEnabled(): boolean {
     if (process.platform === "win32") {
       return existsSync(join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${APP_NAME}.vbs`));
     }
-    return existsSync(join(homedir(), ".config", "autostart", `${APP_NAME}.desktop`));
+    // Linux: desktop autostart entry OR a systemd unit (system or per-user).
+    return existsSync(xdgAutostartPath()) || existsSync(SYSTEMD_SYSTEM_PATH) || existsSync(systemdUserPath());
   } catch {
     return false;
   }
 }
 
 export function enableAutoStart(cliPath?: string): boolean {
-  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return false;
   const script = getCliPath(cliPath);
   if (!script) return false;
   const node = process.execPath;
@@ -111,7 +124,45 @@ function disableWin(): boolean {
 }
 
 // ── Linux ──
+/** A graphical session where XDG autostart (~/.config/autostart) actually fires. */
+function isDesktopSession(): boolean {
+  return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+function hasSystemd(): boolean {
+  try { execSync("systemctl --version", { stdio: "ignore" }); return true; } catch { return false; }
+}
+function isRoot(): boolean {
+  return typeof process.getuid === "function" && process.getuid() === 0;
+}
+function currentUser(): string {
+  try { return userInfo().username; } catch { return process.env.USER || "root"; }
+}
+
 function enableLinux(node: string, script: string): boolean {
+  // Desktop → hook into the session's autostart (fires on graphical login).
+  if (isDesktopSession()) return enableLinuxXdg(node, script);
+  // Headless server → install a systemd service so it starts on boot.
+  if (hasSystemd()) return enableLinuxSystemd(node, script);
+  return false;
+}
+function disableLinux(): boolean {
+  // Remove whichever mechanism(s) were registered; never stop the running
+  // instance (this call is serving the toggle request itself).
+  if (existsSync(xdgAutostartPath())) unlinkSync(xdgAutostartPath());
+  if (existsSync(SYSTEMD_SYSTEM_PATH)) {
+    try { execSync(`systemctl disable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* leftover symlink is harmless */ }
+    unlinkSync(SYSTEMD_SYSTEM_PATH);
+    try { execSync("systemctl daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+  }
+  if (existsSync(systemdUserPath())) {
+    try { execSync(`systemctl --user disable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* leftover symlink is harmless */ }
+    unlinkSync(systemdUserPath());
+    try { execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+  }
+  return true;
+}
+
+function enableLinuxXdg(node: string, script: string): boolean {
   const dir = join(homedir(), ".config", "autostart");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const desktop = `[Desktop Entry]
@@ -123,11 +174,43 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 `;
-  writeFileSync(join(dir, `${APP_NAME}.desktop`), desktop);
+  writeFileSync(xdgAutostartPath(), desktop);
   return true;
 }
-function disableLinux(): boolean {
-  const desktop = join(homedir(), ".config", "autostart", `${APP_NAME}.desktop`);
-  if (existsSync(desktop)) unlinkSync(desktop);
+
+/** systemd unit body. `user` set only for system units (per-user units already
+ *  run as the logged-in user). */
+function systemdUnit(node: string, script: string, wantedBy: string, user?: string): string {
+  const userLine = user ? `User=${user}\n` : "";
+  return `[Unit]
+Description=aigloo — personal AI gateway
+After=network.target
+
+[Service]
+Type=simple
+${userLine}ExecStart=${node} ${script} --tray --skip-update
+Restart=always
+
+[Install]
+WantedBy=${wantedBy}
+`;
+}
+
+function enableLinuxSystemd(node: string, script: string): boolean {
+  // We only register for boot — we don't `start` the unit, since aigloo is
+  // already running (this very process); systemd takes over on the next boot.
+  if (isRoot()) {
+    writeFileSync(SYSTEMD_SYSTEM_PATH, systemdUnit(node, script, "multi-user.target", currentUser()));
+    try { execSync("systemctl daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+    try { execSync(`systemctl enable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* symlinked on next boot */ }
+    return true;
+  }
+  // Non-root: per-user unit + linger so it runs without an active login.
+  const dir = dirname(systemdUserPath());
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(systemdUserPath(), systemdUnit(node, script, "default.target"));
+  try { execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+  try { execSync(`systemctl --user enable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* enabled on next login */ }
+  try { execSync(`loginctl enable-linger ${currentUser()}`, { stdio: "ignore" }); } catch { /* may need privileges */ }
   return true;
 }
