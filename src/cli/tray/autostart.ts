@@ -13,7 +13,13 @@ import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
+
+/** Run a command with argv (no shell) so interpolated values like a username
+ *  can't inject. Returns true on exit 0, false on any failure. */
+function run(cmd: string, args: string[]): boolean {
+  try { execFileSync(cmd, args, { stdio: "ignore" }); return true; } catch { return false; }
+}
 
 const APP_NAME = "aigloo";
 const APP_LABEL = "com.aigloo.autostart";
@@ -124,9 +130,14 @@ function disableWin(): boolean {
 }
 
 // ── Linux ──
-/** A graphical session where XDG autostart (~/.config/autostart) actually fires. */
+/** A graphical session where XDG autostart (~/.config/autostart) actually fires.
+ *  DISPLAY/WAYLAND alone isn't enough — SSH X11-forwarding sets DISPLAY on a
+ *  headless box, and an XDG entry would never run on its boot. Require a real
+ *  desktop-session marker too, so those cases take the systemd path instead. */
 function isDesktopSession(): boolean {
-  return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  const hasDisplay = !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+  const hasSession = !!(process.env.XDG_CURRENT_DESKTOP || process.env.DESKTOP_SESSION);
+  return hasDisplay && hasSession;
 }
 function hasSystemd(): boolean {
   try { execSync("systemctl --version", { stdio: "ignore" }); return true; } catch { return false; }
@@ -147,17 +158,19 @@ function enableLinux(node: string, script: string): boolean {
 }
 function disableLinux(): boolean {
   // Remove whichever mechanism(s) were registered; never stop the running
-  // instance (this call is serving the toggle request itself).
-  if (existsSync(xdgAutostartPath())) unlinkSync(xdgAutostartPath());
+  // instance (this call is serving the toggle request itself). Each step is
+  // isolated so one failure (e.g. a root-owned system unit a regular user can't
+  // remove) doesn't abort the remaining cleanup.
+  try { if (existsSync(xdgAutostartPath())) unlinkSync(xdgAutostartPath()); } catch { /* keep going */ }
   if (existsSync(SYSTEMD_SYSTEM_PATH)) {
-    try { execSync(`systemctl disable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* leftover symlink is harmless */ }
-    unlinkSync(SYSTEMD_SYSTEM_PATH);
-    try { execSync("systemctl daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+    run("systemctl", ["disable", SYSTEMD_UNIT]);
+    try { unlinkSync(SYSTEMD_SYSTEM_PATH); } catch { /* not permitted / already gone */ }
+    run("systemctl", ["daemon-reload"]);
   }
   if (existsSync(systemdUserPath())) {
-    try { execSync(`systemctl --user disable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* leftover symlink is harmless */ }
-    unlinkSync(systemdUserPath());
-    try { execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
+    run("systemctl", ["--user", "disable", SYSTEMD_UNIT]);
+    try { unlinkSync(systemdUserPath()); } catch { /* already gone */ }
+    run("systemctl", ["--user", "daemon-reload"]);
   }
   return true;
 }
@@ -169,7 +182,7 @@ function enableLinuxXdg(node: string, script: string): boolean {
 Type=Application
 Name=aigloo
 Comment=Personal AI gateway
-Exec=${node} ${script} --tray --skip-update
+Exec="${node}" "${script}" --tray --skip-update
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -188,7 +201,7 @@ After=network.target
 
 [Service]
 Type=simple
-${userLine}ExecStart=${node} ${script} --tray --skip-update
+${userLine}ExecStart="${node}" "${script}" --tray --skip-update
 Restart=always
 
 [Install]
@@ -200,17 +213,32 @@ function enableLinuxSystemd(node: string, script: string): boolean {
   // We only register for boot — we don't `start` the unit, since aigloo is
   // already running (this very process); systemd takes over on the next boot.
   if (isRoot()) {
-    writeFileSync(SYSTEMD_SYSTEM_PATH, systemdUnit(node, script, "multi-user.target", currentUser()));
-    try { execSync("systemctl daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
-    try { execSync(`systemctl enable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* symlinked on next boot */ }
+    // Under sudo, run the service as the human who invoked it (SUDO_USER), not
+    // root — otherwise it uses root's aigloo data dir instead of theirs.
+    const runAs = process.env.SUDO_USER || currentUser();
+    writeFileSync(SYSTEMD_SYSTEM_PATH, systemdUnit(node, script, "multi-user.target", runAs));
+    run("systemctl", ["daemon-reload"]);
+    // `enable` creates the WantedBy symlink that makes it start on boot. If it
+    // fails the unit won't boot, so don't report success — and remove the
+    // half-installed unit to keep isAutoStartEnabled() honest.
+    if (!run("systemctl", ["enable", SYSTEMD_UNIT])) {
+      try { unlinkSync(SYSTEMD_SYSTEM_PATH); } catch { /* already gone */ }
+      return false;
+    }
     return true;
   }
   // Non-root: per-user unit + linger so it runs without an active login.
   const dir = dirname(systemdUserPath());
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(systemdUserPath(), systemdUnit(node, script, "default.target"));
-  try { execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch { /* best effort */ }
-  try { execSync(`systemctl --user enable ${SYSTEMD_UNIT}`, { stdio: "ignore" }); } catch { /* enabled on next login */ }
-  try { execSync(`loginctl enable-linger ${currentUser()}`, { stdio: "ignore" }); } catch { /* may need privileges */ }
+  run("systemctl", ["--user", "daemon-reload"]);
+  if (!run("systemctl", ["--user", "enable", SYSTEMD_UNIT])) {
+    try { unlinkSync(systemdUserPath()); } catch { /* already gone */ }
+    return false;
+  }
+  // Linger lets the user unit run without an active login (needed at boot on a
+  // server). Best-effort: may require privileges. The unit is still enabled for
+  // the next login even if this fails.
+  run("loginctl", ["enable-linger", currentUser()]);
   return true;
 }
