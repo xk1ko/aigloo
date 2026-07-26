@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RichCard, CardTitle } from "@/components/RichCard";
+import { IconBadge } from "@/components/Icon";
 import { Badge } from "@/components/Badge";
 
 export function AutostartToggle() {
@@ -31,7 +32,7 @@ export function AutostartToggle() {
   }
 
   return (
-    <RichCard header={<CardTitle title="Startup" sub="run aigloo when your system boots" />}>
+    <RichCard header={<CardTitle icon={<IconBadge name="power_settings_new" tone="success" />} title="Startup" sub="run aigloo when your system boots" />}>
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-[13px]">

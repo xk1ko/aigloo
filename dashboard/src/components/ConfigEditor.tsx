@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Badge } from "@/components/Badge";
-import { Icon } from "@/components/Icon";
+import { Icon, IconBadge } from "@/components/Icon";
 import { Empty, LoadingDots } from "@/components/ui";
 import { PasswordEditor } from "@/components/PasswordEditor";
 import { AutostartToggle } from "@/components/AutostartToggle";
@@ -96,9 +96,12 @@ export function ConfigEditor() {
         <div className="space-y-4">
           {/* instance */}
           <div className="overflow-hidden rounded-brand-lg card">
-            <div className="border-b border-border-subtle px-5 py-3">
-              <h2 className="text-[14px] font-semibold text-text">Instance</h2>
-              <p className="text-[12px] text-text-muted">read-only</p>
+            <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-3">
+              <IconBadge name="dns" tone="info" />
+              <div>
+                <h2 className="text-[14px] font-semibold text-text">Instance</h2>
+                <p className="text-[12px] text-text-muted">read-only</p>
+              </div>
             </div>
             <div className="space-y-2.5 px-5 py-4 text-[13px]">
               {info ? (
@@ -131,9 +134,12 @@ export function ConfigEditor() {
           {/* pricing */}
           <div className="overflow-hidden rounded-brand-lg card">
             <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
-              <div>
-                <h2 className="text-[14px] font-semibold text-text">Pricing</h2>
-                <p className="text-[12px] text-text-muted">per-model $/1M overrides</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <IconBadge name="sell" tone="accent" />
+                <div className="min-w-0">
+                  <h2 className="text-[14px] font-semibold text-text">Pricing</h2>
+                  <p className="text-[12px] text-text-muted">per-model $/1M overrides</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Link href="/pricing" className="inline-flex items-center justify-center gap-1.5 rounded-brand px-3.5 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer glass text-text-muted border-transparent hover:text-text whitespace-nowrap">
@@ -151,9 +157,12 @@ export function ConfigEditor() {
           {/* notifications */}
           <div className="overflow-hidden rounded-brand-lg card">
             <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
-              <div>
-                <h2 className="text-[14px] font-semibold text-text">Alerts &amp; Notifications</h2>
-                <p className="text-[12px] text-text-muted">webhook · telegram · discord</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <IconBadge name="notifications" tone="info" />
+                <div className="min-w-0">
+                  <h2 className="text-[14px] font-semibold text-text">Alerts &amp; Notifications</h2>
+                  <p className="text-[12px] text-text-muted">webhook · telegram · discord</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Link href="/notifications" className="inline-flex items-center justify-center gap-1.5 rounded-brand px-3.5 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer glass text-text-muted border-transparent hover:text-text whitespace-nowrap">
@@ -171,9 +180,12 @@ export function ConfigEditor() {
           {/* backup */}
           <div className="overflow-hidden rounded-brand-lg card">
             <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
-              <div>
-                <h2 className="text-[14px] font-semibold text-text">Backup</h2>
-                <p className="text-[12px] text-text-muted">full config including real keys</p>
+              <div className="flex min-w-0 items-center gap-3">
+                <IconBadge name="backup" tone="success" />
+                <div className="min-w-0">
+                  <h2 className="text-[14px] font-semibold text-text">Backup</h2>
+                  <p className="text-[12px] text-text-muted">full config including real keys</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input ref={fileInput} type="file" accept=".yaml,.yml,.json,text/*" className="hidden" onChange={importFile} />

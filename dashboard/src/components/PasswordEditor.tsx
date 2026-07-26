@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { RichCard, CardTitle } from "@/components/RichCard";
 import { Button } from "@/components/Button";
-import { Icon } from "@/components/Icon";
+import { Icon, IconBadge } from "@/components/Icon";
 import { account } from "@/lib/client";
 
 export function PasswordEditor() {
@@ -41,7 +41,7 @@ export function PasswordEditor() {
   const field = "w-full max-w-[280px] rounded-brand border border-border bg-bg px-2.5 py-1.5 text-[13px] text-text focus:border-accent focus:outline-none";
 
   return (
-    <RichCard header={<CardTitle title="Admin password" sub="for the dashboard login + the gateway admin API" />}>
+    <RichCard header={<CardTitle icon={<IconBadge name="lock" tone="warning" />} title="Admin password" sub="for the dashboard login + the gateway admin API" />}>
       <div className="space-y-2.5">
         <div className="flex items-start gap-2 rounded-brand border border-warning/30 bg-warning/10 px-3 py-2">
           <Icon name="warning" size={16} className="mt-0.5 shrink-0 text-warning" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "@/components/Icon";
+import { Icon, IconBadge } from "@/components/Icon";
 import { fmt, Empty, LoadingDots } from "@/components/ui";
 
 type AuditEvent = {
@@ -46,9 +46,12 @@ export function AuditLogPanel() {
   return (
     <div className="overflow-hidden rounded-brand-lg card">
       <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
-        <div>
-          <h2 className="text-[14px] font-semibold text-text">Activity</h2>
-          <p className="text-[12px] text-text-muted">logins · keys · password changes</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <IconBadge name="history" tone="neutral" />
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-semibold text-text">Activity</h2>
+            <p className="text-[12px] text-text-muted">logins · keys · password changes</p>
+          </div>
         </div>
         <button
           type="button"
