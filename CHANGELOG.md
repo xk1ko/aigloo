@@ -5,6 +5,14 @@ All notable changes to **aigloo** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] — 2026-07-26
+
+### Added
+- **Icon badges on settings cards** — Instance, Pricing, Alerts & Notifications, Backup, Admin password, Startup, and Activity cards each carry a tinted icon badge for faster scanning
+
+### Fixed
+- **Auto-start on headless Linux** — Enabling auto-start on a server with no desktop session now installs a systemd service (system unit, or a user unit with lingering) instead of failing silently. Runs as the invoking user, quotes the node/script paths, and cleans up the unit file if `systemctl enable` fails
+
 ## [1.2.5] — 2026-07-20
 
 ### Removed
