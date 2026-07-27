@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Icon } from "@/components/Icon";
+import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { Icon, IconBadge } from "@/components/Icon";
 import { Button } from "@/components/Button";
+import { Badge } from "@/components/Badge";
+import { Lamp } from "@/components/Lamp";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
+import { fmt, Empty } from "@/components/ui";
+import type { UsageLog } from "@/lib/gateway";
 
 const LOG_COLORS: Record<string, string> = {
   LOG: "text-success",
@@ -24,6 +30,77 @@ interface LogEntry {
   ts: number;
   level: string;
   message: string;
+}
+
+/** Compact last-N requests panel — the full filterable table lives on Usage. */
+function RecentRequests() {
+  const [logs, setLogs] = useState<UsageLog[] | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/gw/admin/logs?limit=8", { credentials: "same-origin" });
+      if (!res.ok) {
+        setLogs([]);
+        return;
+      }
+      const data = (await res.json()) as { logs: UsageLog[] };
+      setLogs(data.logs ?? []);
+    } catch {
+      setLogs([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  return (
+    <div className="overflow-hidden rounded-brand-lg card">
+      <div className="flex items-center justify-between border-b border-border-subtle px-5 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <IconBadge name="bar_chart" tone="neutral" />
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-semibold text-text">Recent requests</h2>
+            <p className="text-[12px] text-text-muted">latest traffic through the gateway</p>
+          </div>
+        </div>
+        <Link
+          href="/usage"
+          className="inline-flex items-center gap-1 rounded-brand px-2.5 py-1.5 text-[12px] text-text-muted hover:bg-surface-3 hover:text-text"
+        >
+          Open Usage <Icon name="arrow_forward" size={13} />
+        </Link>
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {logs === null ? (
+          <Empty>Loading…</Empty>
+        ) : logs.length === 0 ? (
+          <Empty>No requests recorded yet.</Empty>
+        ) : (
+          <ul className="divide-y divide-border-subtle">
+            {logs.map((l, i) => (
+              <li key={`${l.ts}-${i}`} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
+                <Badge tone={l.status < 400 ? "live" : "down"}>
+                  <Lamp state={l.status < 400 ? "live" : "down"} />
+                  {l.status}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-text">
+                  {l.alias || l.model}
+                </span>
+                <span className="flex-none text-[12px] text-text-muted">{l.provider}</span>
+                <span className="flex-none tnum text-[11px] text-text-subtle">{fmt.int(l.latency_ms)}ms</span>
+                <time className="flex-none tnum text-[11px] text-text-subtle" title={fmt.time(l.ts)}>
+                  {fmt.ago(l.ts)}
+                </time>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function ConsolePage() {
@@ -108,7 +185,7 @@ export default function ConsolePage() {
         {/* log area */}
         <div
           ref={logRef}
-          className="h-[calc(100vh-220px)] overflow-y-auto bg-[#06070b] p-4 font-mono text-[12px]"
+          className="h-[min(52vh,460px)] overflow-y-auto bg-[#06070b] p-4 font-mono text-[12px]"
         >
           {logs.length === 0 ? (
             <span className="text-text-subtle">No logs yet…</span>
@@ -124,6 +201,12 @@ export default function ConsolePage() {
             ))
           )}
         </div>
+      </div>
+
+      {/* activity + recent traffic */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <AuditLogPanel />
+        <RecentRequests />
       </div>
     </div>
   );

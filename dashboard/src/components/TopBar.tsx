@@ -108,7 +108,7 @@ function UpdateModal({
   );
 }
 
-export function TopBar() {
+export function TopBar({ onMenu }: { onMenu?: () => void }) {
   const path = usePathname();
   const { theme, toggle } = useTheme();
   const seg = path === "/" ? "" : (path.split("/")[1] ?? "");
@@ -149,6 +149,9 @@ export function TopBar() {
 
   return (
     <header className="app-topbar">
+      <button className="sb-burger" onClick={onMenu} aria-label="Toggle navigation">
+        <Icon name="menu" size={20} />
+      </button>
       <div className="flex items-center gap-2 text-[14px]">
         <span className="text-text-subtle">aigloo</span>
         <span className="text-text-subtle">/</span>
